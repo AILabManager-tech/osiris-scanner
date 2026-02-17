@@ -1,0 +1,785 @@
+{
+  "calibration_date": "2026-02-07T23:25:13.675156+00:00",
+  "sites_scanned": 5,
+  "sites_failed": 0,
+  "results": [
+    {
+      "url": "https://www.wikipedia.org",
+      "score": 7.7,
+      "grade": "Conforme",
+      "axes": {
+        "O": {
+          "score": 5.9,
+          "details": {
+            "lighthouse_score": 59.0,
+            "metrics": {
+              "first-contentful-paint": {
+                "displayValue": "7.0 s",
+                "score": 0.01
+              },
+              "largest-contentful-paint": {
+                "displayValue": "7.1 s",
+                "score": 0.05
+              },
+              "total-blocking-time": {
+                "displayValue": "40 ms",
+                "score": 1
+              },
+              "cumulative-layout-shift": {
+                "displayValue": "0.055",
+                "score": 0.98
+              },
+              "speed-index": {
+                "displayValue": "7.0 s",
+                "score": 0.32
+              }
+            }
+          }
+        },
+        "S": {
+          "score": 4.9,
+          "details": {
+            "observatory_grade": "C",
+            "observatory_score_raw": 50,
+            "observatory_tests_passed": 7,
+            "observatory_tests_failed": 3,
+            "headers_score": 2.5,
+            "headers_found": [
+              "strict-transport-security"
+            ],
+            "headers_missing": [
+              "content-security-policy",
+              "x-frame-options",
+              "x-content-type-options",
+              "referrer-policy",
+              "permissions-policy"
+            ]
+          }
+        },
+        "I": {
+          "score": 10.0,
+          "details": {
+            "trackers_found": 0,
+            "tracker_domains": [],
+            "third_party_domains": [
+              "commons.wikimedia.org",
+              "creativecommons.org",
+              "donate.wikimedia.org",
+              "foundation.wikimedia.org",
+              "itunes.apple.com",
+              "meta.wikimedia.org",
+              "play.google.com",
+              "species.wikimedia.org",
+              "upload.wikimedia.org",
+              "wikis.world",
+              "www.mediawiki.org",
+              "www.w3.org",
+              "www.wikibooks.org",
+              "www.wikidata.org",
+              "www.wikifunctions.org",
+              "www.wikinews.org",
+              "www.wikiquote.org",
+              "www.wikisource.org",
+              "www.wikiversity.org",
+              "www.wikivoyage.org",
+              "www.wiktionary.org"
+            ],
+            "first_party_domains": [
+              "ab.wikipedia.org",
+              "ace.wikipedia.org",
+              "ady.wikipedia.org",
+              "af.wikipedia.org",
+              "als.wikipedia.org",
+              "alt.wikipedia.org",
+              "am.wikipedia.org",
+              "ami.wikipedia.org",
+              "an.wikipedia.org",
+              "ang.wikipedia.org",
+              "ann.wikipedia.org",
+              "anp.wikipedia.org",
+              "ar.wikipedia.org",
+              "arc.wikipedia.org",
+              "ary.wikipedia.org",
+              "arz.wikipedia.org",
+              "as.wikipedia.org",
+              "ast.wikipedia.org",
+              "atj.wikipedia.org",
+              "av.wikipedia.org",
+              "avk.wikipedia.org",
+              "awa.wikipedia.org",
+              "ay.wikipedia.org",
+              "az.wikipedia.org",
+              "azb.wikipedia.org",
+              "ba.wikipedia.org",
+              "ban.wikipedia.org",
+              "bar.wikipedia.org",
+              "bat-smg.wikipedia.org",
+              "bbc.wikipedia.org",
+              "bcl.wikipedia.org",
+              "bdr.wikipedia.org",
+              "be-tarask.wikipedia.org",
+              "be.wikipedia.org",
+              "bew.wikipedia.org",
+              "bg.wikipedia.org",
+              "bh.wikipedia.org",
+              "bi.wikipedia.org",
+              "bjn.wikipedia.org",
+              "blk.wikipedia.org",
+              "bm.wikipedia.org",
+              "bn.wikipedia.org",
+              "bo.wikipedia.org",
+              "bpy.wikipedia.org",
+              "br.wikipedia.org",
+              "bs.wikipedia.org",
+              "btm.wikipedia.org",
+              "bug.wikipedia.org",
+              "bxr.wikipedia.org",
+              "ca.wikipedia.org",
+              "cbk-zam.wikipedia.org",
+              "cdo.wikipedia.org",
+              "ce.wikipedia.org",
+              "ceb.wikipedia.org",
+              "ch.wikipedia.org",
+              "chr.wikipedia.org",
+              "chy.wikipedia.org",
+              "ckb.wikipedia.org",
+              "co.wikipedia.org",
+              "crh.wikipedia.org",
+              "cs.wikipedia.org",
+              "csb.wikipedia.org",
+              "cu.wikipedia.org",
+              "cv.wikipedia.org",
+              "cy.wikipedia.org",
+              "da.wikipedia.org",
+              "dag.wikipedia.org",
+              "de.wikipedia.org",
+              "dga.wikipedia.org",
+              "din.wikipedia.org",
+              "diq.wikipedia.org",
+              "dsb.wikipedia.org",
+              "dtp.wikipedia.org",
+              "dty.wikipedia.org",
+              "dv.wikipedia.org",
+              "dz.wikipedia.org",
+              "ee.wikipedia.org",
+              "el.wikipedia.org",
+              "eml.wikipedia.org",
+              "en.wikipedia.org",
+              "eo.wikipedia.org",
+              "es.wikipedia.org",
+              "et.wikipedia.org",
+              "eu.wikipedia.org",
+              "ext.wikipedia.org",
+              "fa.wikipedia.org",
+              "fat.wikipedia.org",
+              "ff.wikipedia.org",
+              "fi.wikipedia.org",
+              "fiu-vro.wikipedia.org",
+              "fj.wikipedia.org",
+              "fo.wikipedia.org",
+              "fon.wikipedia.org",
+              "fr.wikipedia.org",
+              "frp.wikipedia.org",
+              "frr.wikipedia.org",
+              "fur.wikipedia.org",
+              "fy.wikipedia.org",
+              "ga.wikipedia.org",
+              "gag.wikipedia.org",
+              "gan.wikipedia.org",
+              "gcr.wikipedia.org",
+              "gd.wikipedia.org",
+              "gl.wikipedia.org",
+              "glk.wikipedia.org",
+              "gn.wikipedia.org",
+              "gom.wikipedia.org",
+              "gor.wikipedia.org",
+              "got.wikipedia.org",
+              "gpe.wikipedia.org",
+              "gu.wikipedia.org",
+              "guc.wikipedia.org",
+              "gur.wikipedia.org",
+              "guw.wikipedia.org",
+              "gv.wikipedia.org",
+              "ha.wikipedia.org",
+              "hak.wikipedia.org",
+              "haw.wikipedia.org",
+              "he.wikipedia.org",
+              "hi.wikipedia.org",
+              "hif.wikipedia.org",
+              "hr.wikipedia.org",
+              "hsb.wikipedia.org",
+              "ht.wikipedia.org",
+              "hu.wikipedia.org",
+              "hy.wikipedia.org",
+              "hyw.wikipedia.org",
+              "ia.wikipedia.org",
+              "iba.wikipedia.org",
+              "id.wikipedia.org",
+              "ie.wikipedia.org",
+              "ig.wikipedia.org",
+              "igl.wikipedia.org",
+              "ik.wikipedia.org",
+              "ilo.wikipedia.org",
+              "inh.wikipedia.org",
+              "io.wikipedia.org",
+              "is.wikipedia.org",
+              "it.wikipedia.org",
+              "iu.wikipedia.org",
+              "ja.wikipedia.org",
+              "jam.wikipedia.org",
+              "jbo.wikipedia.org",
+              "jv.wikipedia.org",
+              "ka.wikipedia.org",
+              "kaa.wikipedia.org",
+              "kab.wikipedia.org",
+              "kbd.wikipedia.org",
+              "kbp.wikipedia.org",
+              "kcg.wikipedia.org",
+              "kg.wikipedia.org",
+              "kge.wikipedia.org",
+              "ki.wikipedia.org",
+              "kk.wikipedia.org",
+              "km.wikipedia.org",
+              "kn.wikipedia.org",
+              "knc.wikipedia.org",
+              "ko.wikipedia.org",
+              "koi.wikipedia.org",
+              "krc.wikipedia.org",
+              "ks.wikipedia.org",
+              "ksh.wikipedia.org",
+              "ku.wikipedia.org",
+              "kus.wikipedia.org",
+              "kv.wikipedia.org",
+              "kw.wikipedia.org",
+              "ky.wikipedia.org",
+              "la.wikipedia.org",
+              "lad.wikipedia.org",
+              "lb.wikipedia.org",
+              "lbe.wikipedia.org",
+              "lez.wikipedia.org",
+              "lfn.wikipedia.org",
+              "lg.wikipedia.org",
+              "li.wikipedia.org",
+              "lij.wikipedia.org",
+              "lld.wikipedia.org",
+              "lmo.wikipedia.org",
+              "ln.wikipedia.org",
+              "lo.wikipedia.org",
+              "lt.wikipedia.org",
+              "ltg.wikipedia.org",
+              "lv.wikipedia.org",
+              "mad.wikipedia.org",
+              "mai.wikipedia.org",
+              "map-bms.wikipedia.org",
+              "mdf.wikipedia.org",
+              "mg.wikipedia.org",
+              "mhr.wikipedia.org",
+              "mi.wikipedia.org",
+              "min.wikipedia.org",
+              "mk.wikipedia.org",
+              "ml.wikipedia.org",
+              "mn.wikipedia.org",
+              "mni.wikipedia.org",
+              "mnw.wikipedia.org",
+              "mos.wikipedia.org",
+              "mr.wikipedia.org",
+              "mrj.wikipedia.org",
+              "ms.wikipedia.org",
+              "mt.wikipedia.org",
+              "mwl.wikipedia.org",
+              "my.wikipedia.org",
+              "myv.wikipedia.org",
+              "mzn.wikipedia.org",
+              "nah.wikipedia.org",
+              "nap.wikipedia.org",
+              "nds-nl.wikipedia.org",
+              "nds.wikipedia.org",
+              "ne.wikipedia.org",
+              "new.wikipedia.org",
+              "nia.wikipedia.org",
+              "nl.wikipedia.org",
+              "nn.wikipedia.org",
+              "no.wikipedia.org",
+              "nov.wikipedia.org",
+              "nqo.wikipedia.org",
+              "nr.wikipedia.org",
+              "nrm.wikipedia.org",
+              "nso.wikipedia.org",
+              "nup.wikipedia.org",
+              "nv.wikipedia.org",
+              "ny.wikipedia.org",
+              "oc.wikipedia.org",
+              "olo.wikipedia.org",
+              "om.wikipedia.org",
+              "or.wikipedia.org",
+              "os.wikipedia.org",
+              "pa.wikipedia.org",
+              "pag.wikipedia.org",
+              "pam.wikipedia.org",
+              "pap.wikipedia.org",
+              "pcd.wikipedia.org",
+              "pcm.wikipedia.org",
+              "pdc.wikipedia.org",
+              "pfl.wikipedia.org",
+              "pi.wikipedia.org",
+              "pl.wikipedia.org",
+              "pms.wikipedia.org",
+              "pnb.wikipedia.org",
+              "pnt.wikipedia.org",
+              "ps.wikipedia.org",
+              "pt.wikipedia.org",
+              "pwn.wikipedia.org",
+              "qu.wikipedia.org",
+              "rki.wikipedia.org",
+              "rm.wikipedia.org",
+              "rmy.wikipedia.org",
+              "rn.wikipedia.org",
+              "ro.wikipedia.org",
+              "roa-rup.wikipedia.org",
+              "roa-tara.wikipedia.org",
+              "rsk.wikipedia.org",
+              "ru.wikipedia.org",
+              "rue.wikipedia.org",
+              "rw.wikipedia.org",
+              "sa.wikipedia.org",
+              "sah.wikipedia.org",
+              "sat.wikipedia.org",
+              "sc.wikipedia.org",
+              "scn.wikipedia.org",
+              "sco.wikipedia.org",
+              "sd.wikipedia.org",
+              "se.wikipedia.org",
+              "sg.wikipedia.org",
+              "sh.wikipedia.org",
+              "shi.wikipedia.org",
+              "shn.wikipedia.org",
+              "si.wikipedia.org",
+              "simple.wikipedia.org",
+              "sk.wikipedia.org",
+              "skr.wikipedia.org",
+              "sl.wikipedia.org",
+              "sm.wikipedia.org",
+              "smn.wikipedia.org",
+              "sn.wikipedia.org",
+              "so.wikipedia.org",
+              "sq.wikipedia.org",
+              "sr.wikipedia.org",
+              "srn.wikipedia.org",
+              "ss.wikipedia.org",
+              "st.wikipedia.org",
+              "stq.wikipedia.org",
+              "su.wikipedia.org",
+              "sv.wikipedia.org",
+              "sw.wikipedia.org",
+              "syl.wikipedia.org",
+              "szl.wikipedia.org",
+              "szy.wikipedia.org",
+              "ta.wikipedia.org",
+              "tay.wikipedia.org",
+              "tcy.wikipedia.org",
+              "tdd.wikipedia.org",
+              "te.wikipedia.org",
+              "tet.wikipedia.org",
+              "tg.wikipedia.org",
+              "th.wikipedia.org",
+              "ti.wikipedia.org",
+              "tk.wikipedia.org",
+              "tl.wikipedia.org",
+              "tly.wikipedia.org",
+              "tn.wikipedia.org",
+              "to.wikipedia.org",
+              "tok.wikipedia.org",
+              "tpi.wikipedia.org",
+              "tr.wikipedia.org",
+              "trv.wikipedia.org",
+              "ts.wikipedia.org",
+              "tt.wikipedia.org",
+              "tum.wikipedia.org",
+              "tw.wikipedia.org",
+              "ty.wikipedia.org",
+              "tyv.wikipedia.org",
+              "udm.wikipedia.org",
+              "ug.wikipedia.org",
+              "uk.wikipedia.org",
+              "ur.wikipedia.org",
+              "uz.wikipedia.org",
+              "ve.wikipedia.org",
+              "vec.wikipedia.org",
+              "vep.wikipedia.org",
+              "vi.wikipedia.org",
+              "vls.wikipedia.org",
+              "vo.wikipedia.org",
+              "wa.wikipedia.org",
+              "war.wikipedia.org",
+              "wo.wikipedia.org",
+              "wuu.wikipedia.org",
+              "xal.wikipedia.org",
+              "xh.wikipedia.org",
+              "xmf.wikipedia.org",
+              "yi.wikipedia.org",
+              "yo.wikipedia.org",
+              "za.wikipedia.org",
+              "zea.wikipedia.org",
+              "zgh.wikipedia.org",
+              "zh-classical.wikipedia.org",
+              "zh-min-nan.wikipedia.org",
+              "zh-yue.wikipedia.org",
+              "zh.wikipedia.org",
+              "zu.wikipedia.org"
+            ],
+            "total_domains": 362,
+            "first_party_ratio": 0.94
+          }
+        },
+        "R": {
+          "score": 10.0,
+          "details": {
+            "page_weight_bytes": 194356,
+            "page_weight_kb": 189.8,
+            "resource_count": 8,
+            "gco2": 0.0203,
+            "green_hosting": false,
+            "carbon_source": "Website Carbon API",
+            "carbon_rating": "A+",
+            "cleaner_than": 0.97
+          }
+        }
+      }
+    },
+    {
+      "url": "https://www.google.com",
+      "score": 7.3,
+      "grade": "Conforme",
+      "axes": {
+        "O": {
+          "score": 3.5,
+          "details": {
+            "lighthouse_score": 35.0,
+            "metrics": {
+              "first-contentful-paint": {
+                "displayValue": "4.4 s",
+                "score": 0.17
+              },
+              "largest-contentful-paint": {
+                "displayValue": "9.6 s",
+                "score": 0
+              },
+              "total-blocking-time": {
+                "displayValue": "1,420 ms",
+                "score": 0.15
+              },
+              "cumulative-layout-shift": {
+                "displayValue": "0",
+                "score": 1
+              },
+              "speed-index": {
+                "displayValue": "6.3 s",
+                "score": 0.42
+              }
+            }
+          }
+        },
+        "S": {
+          "score": 5.3,
+          "details": {
+            "observatory_grade": "C+",
+            "observatory_score_raw": 60,
+            "observatory_tests_passed": 6,
+            "observatory_tests_failed": 4,
+            "headers_score": 1.2,
+            "headers_found": [
+              "x-frame-options"
+            ],
+            "headers_missing": [
+              "strict-transport-security",
+              "content-security-policy",
+              "x-content-type-options",
+              "referrer-policy",
+              "permissions-policy"
+            ]
+          }
+        },
+        "I": {
+          "score": 10.0,
+          "details": {
+            "trackers_found": 0,
+            "tracker_domains": [],
+            "third_party_domains": [
+              "maps.google.ca",
+              "schema.org",
+              "www.google.ca",
+              "www.youtube.com"
+            ],
+            "first_party_domains": [
+              "accounts.google.com",
+              "drive.google.com",
+              "mail.google.com",
+              "news.google.com",
+              "play.google.com",
+              "www.google.com"
+            ],
+            "total_domains": 10,
+            "first_party_ratio": 0.6
+          }
+        },
+        "R": {
+          "score": 10.0,
+          "details": {
+            "page_weight_bytes": 18059,
+            "page_weight_kb": 17.6,
+            "resource_count": 1,
+            "gco2": 0.0019,
+            "green_hosting": true,
+            "carbon_source": "Website Carbon API",
+            "carbon_rating": "A+",
+            "cleaner_than": 1
+          }
+        }
+      }
+    },
+    {
+      "url": "https://example.com",
+      "score": 7.3,
+      "grade": "Conforme",
+      "axes": {
+        "O": {
+          "score": 10.0,
+          "details": {
+            "lighthouse_score": 100.0,
+            "metrics": {
+              "first-contentful-paint": {
+                "displayValue": "0.8 s",
+                "score": 1
+              },
+              "largest-contentful-paint": {
+                "displayValue": "0.8 s",
+                "score": 1
+              },
+              "total-blocking-time": {
+                "displayValue": "0 ms",
+                "score": 1
+              },
+              "cumulative-layout-shift": {
+                "displayValue": "0",
+                "score": 1
+              },
+              "speed-index": {
+                "displayValue": "0.8 s",
+                "score": 1
+              }
+            }
+          }
+        },
+        "S": {
+          "score": 1.0,
+          "details": {
+            "observatory_grade": "F",
+            "observatory_score_raw": 10,
+            "observatory_tests_passed": 5,
+            "observatory_tests_failed": 5,
+            "headers_score": 0.0,
+            "headers_found": [],
+            "headers_missing": [
+              "strict-transport-security",
+              "content-security-policy",
+              "x-frame-options",
+              "x-content-type-options",
+              "referrer-policy",
+              "permissions-policy"
+            ]
+          }
+        },
+        "I": {
+          "score": 10.0,
+          "details": {
+            "trackers_found": 0,
+            "tracker_domains": [],
+            "third_party_domains": [
+              "iana.org"
+            ],
+            "first_party_domains": [],
+            "total_domains": 1,
+            "first_party_ratio": 0.0
+          }
+        },
+        "R": {
+          "score": 10.0,
+          "details": {
+            "page_weight_bytes": 513,
+            "page_weight_kb": 0.5,
+            "resource_count": 0,
+            "gco2": 0.0001,
+            "green_hosting": true,
+            "carbon_source": "Website Carbon API",
+            "carbon_rating": "A+",
+            "cleaner_than": 1
+          }
+        }
+      }
+    },
+    {
+      "url": "https://www.gov.uk",
+      "score": 9.5,
+      "grade": "Exemplaire",
+      "axes": {
+        "O": {
+          "score": 7.6,
+          "details": {
+            "lighthouse_score": 76.0,
+            "metrics": {
+              "first-contentful-paint": {
+                "displayValue": "1.7 s",
+                "score": 0.92
+              },
+              "largest-contentful-paint": {
+                "displayValue": "1.9 s",
+                "score": 0.98
+              },
+              "total-blocking-time": {
+                "displayValue": "20 ms",
+                "score": 1
+              },
+              "cumulative-layout-shift": {
+                "displayValue": "0.565",
+                "score": 0.12
+              },
+              "speed-index": {
+                "displayValue": "2.7 s",
+                "score": 0.96
+              }
+            }
+          }
+        },
+        "S": {
+          "score": 10.0,
+          "details": {
+            "observatory_grade": "A+",
+            "observatory_score_raw": 120,
+            "observatory_tests_passed": 10,
+            "observatory_tests_failed": 0,
+            "headers_score": 10.0,
+            "headers_found": [
+              "strict-transport-security",
+              "content-security-policy",
+              "x-frame-options",
+              "x-content-type-options",
+              "referrer-policy",
+              "permissions-policy"
+            ],
+            "headers_missing": []
+          }
+        },
+        "I": {
+          "score": 10.0,
+          "details": {
+            "trackers_found": 0,
+            "tracker_domains": [],
+            "third_party_domains": [
+              "www.smartsurvey.co.uk",
+              "www.w3.org"
+            ],
+            "first_party_domains": [
+              "www.gov.uk",
+              "www.nationalarchives.gov.uk"
+            ],
+            "total_domains": 4,
+            "first_party_ratio": 0.5
+          }
+        },
+        "R": {
+          "score": 10.0,
+          "details": {
+            "page_weight_bytes": 85170,
+            "page_weight_kb": 83.2,
+            "resource_count": 17,
+            "gco2": 0.0089,
+            "green_hosting": false,
+            "carbon_source": "Website Carbon API",
+            "carbon_rating": "A+",
+            "cleaner_than": 0.99
+          }
+        }
+      }
+    },
+    {
+      "url": "https://motherfuckingwebsite.com",
+      "score": 7.1,
+      "grade": "Conforme",
+      "axes": {
+        "O": {
+          "score": 9.1,
+          "details": {
+            "lighthouse_score": 91.0,
+            "metrics": {
+              "first-contentful-paint": {
+                "displayValue": "0.9 s",
+                "score": 1
+              },
+              "largest-contentful-paint": {
+                "displayValue": "0.9 s",
+                "score": 1
+              },
+              "total-blocking-time": {
+                "displayValue": "360 ms",
+                "score": 0.71
+              },
+              "cumulative-layout-shift": {
+                "displayValue": "0",
+                "score": 1
+              },
+              "speed-index": {
+                "displayValue": "0.9 s",
+                "score": 1
+              }
+            }
+          }
+        },
+        "S": {
+          "score": 1.0,
+          "details": {
+            "observatory_grade": "F",
+            "observatory_score_raw": 10,
+            "observatory_tests_passed": 5,
+            "observatory_tests_failed": 5,
+            "headers_score": 0.0,
+            "headers_found": [],
+            "headers_missing": [
+              "strict-transport-security",
+              "content-security-policy",
+              "x-frame-options",
+              "x-content-type-options",
+              "referrer-policy",
+              "permissions-policy"
+            ]
+          }
+        },
+        "I": {
+          "score": 10.0,
+          "details": {
+            "trackers_found": 0,
+            "tracker_domains": [],
+            "third_party_domains": [
+              "www.vitsoe.com"
+            ],
+            "first_party_domains": [],
+            "total_domains": 1,
+            "first_party_ratio": 0.0
+          }
+        },
+        "R": {
+          "score": 10.0,
+          "details": {
+            "page_weight_bytes": 4903,
+            "page_weight_kb": 4.8,
+            "resource_count": 0,
+            "gco2": 0.0005,
+            "green_hosting": false,
+            "carbon_source": "Website Carbon API",
+            "carbon_rating": "A+",
+            "cleaner_than": 1
+          }
+        }
+      }
+    }
+  ]
+}

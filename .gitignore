@@ -1,0 +1,17 @@
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+*.egg-info/
+dist/
+build/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+soic_runs/
+reports/
+benchmark/raw/
+benchmark/summary/
+benchmark/normalized/
+*.env
+.env.*

@@ -1,0 +1,24 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(wc:*)",
+      "Bash(grep:*)",
+      "Bash(pip install:*)",
+      "Bash(ruff check:*)",
+      "Bash(bandit:*)",
+      "Bash(radon cc:*)",
+      "Bash(mypy:*)",
+      "Bash(radon mi:*)",
+      "Bash(radon raw:*)",
+      "Bash(gitleaks detect:*)",
+      "Bash(whereis:*)",
+      "Bash(ls:*)",
+      "Bash(curl:*)",
+      "Bash(playwright install:*)",
+      "Bash(git init:*)",
+      "Bash(git -C /home/jarvis/osiris-scanner status -u)",
+      "Bash(git -C /home/jarvis/osiris-scanner add -A)",
+      "Bash(git -C:*)"
+    ]
+  }
+}

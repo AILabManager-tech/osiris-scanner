@@ -1,0 +1,21 @@
+# OSIRIS Benchmark — Set stable d'URLs de reference
+# Une URL par ligne. Lignes vides et commentaires (#) ignorees.
+# Choix : mix de profils (exemplaire, moyen, lourd) pour couvrir le spectre 0-10.
+
+# --- Institutions / Exemplaire ---
+https://gov.uk
+https://marksystems.ca
+
+# --- Media / Mixte ---
+https://radio-canada.ca
+https://bbc.com
+
+# --- Tech / Conforme ---
+https://github.com
+https://shopify.com
+
+# --- E-commerce / Lourd ---
+https://amazon.ca
+
+# --- Reference minimaliste ---
+https://example.com

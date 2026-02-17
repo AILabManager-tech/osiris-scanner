@@ -1,0 +1,39 @@
+[project]
+name = "osiris-scanner"
+version = "0.2.0"
+description = "OSIRIS — Score composite (0-10) mesurant la santé opérationnelle d'un site web"
+requires-python = ">=3.11"
+dependencies = [
+    "requests>=2.31",
+    "click>=8.1",
+    "rich>=13.0",
+    "playwright>=1.40",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-asyncio>=0.21",
+    "ruff>=0.1",
+    "bandit>=1.7",
+    "radon>=6.0",
+    "mypy>=1.0",
+]
+
+[tool.setuptools.packages.find]
+include = ["axes", "axes.*", "soic_v3", "soic_v3.*"]
+
+[project.scripts]
+osiris = "scanner:main"
+soic = "soic_v3.cli:main"
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "N", "UP", "B", "A", "SIM"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]

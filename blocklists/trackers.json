@@ -1,0 +1,162 @@
+{
+  "_meta": {
+    "description": "Liste de domaines de tracking connus pour OSIRIS Scanner",
+    "sources": [
+      "Disconnect.me Tracking Protection List",
+      "EasyPrivacy List",
+      "uBlock Origin default lists"
+    ],
+    "last_updated": "2026-02-07"
+  },
+  "domains": [
+    "google-analytics.com",
+    "googletagmanager.com",
+    "googleadservices.com",
+    "googlesyndication.com",
+    "googletagservices.com",
+    "doubleclick.net",
+    "google.com/pagead",
+    "googleads.g.doubleclick.net",
+    "adservice.google.com",
+    "analytics.google.com",
+    "www.googleadservices.com",
+    "pagead2.googlesyndication.com",
+    "tpc.googlesyndication.com",
+
+    "facebook.net",
+    "facebook.com/tr",
+    "connect.facebook.net",
+    "pixel.facebook.com",
+    "www.facebook.com/tr",
+
+    "analytics.tiktok.com",
+    "ads.tiktok.com",
+
+    "snap.licdn.com",
+    "px.ads.linkedin.com",
+    "analytics.pointdrive.linkedin.com",
+
+    "ads-twitter.com",
+    "analytics.twitter.com",
+    "t.co",
+    "static.ads-twitter.com",
+
+    "bat.bing.com",
+    "clarity.ms",
+
+    "hotjar.com",
+    "static.hotjar.com",
+    "script.hotjar.com",
+    "vars.hotjar.com",
+
+    "mixpanel.com",
+    "api.mixpanel.com",
+    "cdn.mxpnl.com",
+
+    "api.amplitude.com",
+    "cdn.amplitude.com",
+
+    "api.segment.io",
+    "cdn.segment.com",
+
+    "fullstory.com",
+    "rs.fullstory.com",
+    "edge.fullstory.com",
+
+    "heapanalytics.com",
+    "cdn.heapanalytics.com",
+
+    "mouseflow.com",
+    "cdn.mouseflow.com",
+
+    "crazyegg.com",
+    "script.crazyegg.com",
+
+    "luckyorange.com",
+    "cdn.luckyorange.com",
+
+    "matomo.cloud",
+    "cdn.matomo.cloud",
+
+    "hubspot.com",
+    "js.hs-analytics.net",
+    "track.hubspot.com",
+    "forms.hubspot.com",
+    "js.hsforms.net",
+
+    "intercom.io",
+    "widget.intercom.io",
+    "api-iam.intercom.io",
+
+    "drift.com",
+    "js.driftt.com",
+
+    "optimizely.com",
+    "cdn.optimizely.com",
+    "logx.optimizely.com",
+
+    "newrelic.com",
+    "js-agent.newrelic.com",
+    "bam.nr-data.net",
+
+    "sentry.io",
+    "browser.sentry-cdn.com",
+
+    "quantserve.com",
+    "pixel.quantserve.com",
+
+    "scorecardresearch.com",
+    "sb.scorecardresearch.com",
+
+    "taboola.com",
+    "cdn.taboola.com",
+    "trc.taboola.com",
+
+    "outbrain.com",
+    "widgets.outbrain.com",
+    "log.outbrain.com",
+
+    "criteo.com",
+    "static.criteo.net",
+    "dis.criteo.com",
+
+    "adroll.com",
+    "d.adroll.com",
+
+    "amazon-adsystem.com",
+    "aax.amazon-adsystem.com",
+
+    "adsrvr.org",
+    "match.adsrvr.org",
+
+    "rubiconproject.com",
+    "fastlane.rubiconproject.com",
+
+    "pubmatic.com",
+    "ads.pubmatic.com",
+
+    "casalemedia.com",
+
+    "openx.net",
+    "u.openx.net",
+
+    "indexexchange.com",
+
+    "sharethrough.com",
+
+    "moatads.com",
+    "z.moatads.com",
+
+    "chartbeat.com",
+    "static.chartbeat.com",
+
+    "parsely.com",
+    "srv.pixel.parsely.com",
+
+    "kissmetrics.com",
+    "i.kissmetrics.com",
+
+    "braze.com",
+    "sdk.iad-01.braze.com"
+  ]
+}
