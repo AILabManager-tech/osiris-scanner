@@ -21,11 +21,10 @@ dev = [
 ]
 
 [tool.setuptools.packages.find]
-include = ["axes", "axes.*", "soic_v3", "soic_v3.*"]
+include = ["axes", "axes.*"]
 
 [project.scripts]
 osiris = "scanner:main"
-soic = "soic_v3.cli:main"
 
 [tool.ruff]
 target-version = "py311"

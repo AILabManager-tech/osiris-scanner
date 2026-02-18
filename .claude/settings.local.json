@@ -18,7 +18,16 @@
       "Bash(git init:*)",
       "Bash(git -C /home/jarvis/osiris-scanner status -u)",
       "Bash(git -C /home/jarvis/osiris-scanner add -A)",
-      "Bash(git -C:*)"
+      "Bash(git -C:*)",
+      "Bash(gh auth status:*)",
+      "Bash(gh repo create:*)",
+      "Bash(gh repo list:*)",
+      "Bash(gh repo edit:*)",
+      "Bash(python3:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(trash:*)",
+      "Bash(gio trash:*)"
     ]
   }
 }
