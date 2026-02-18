@@ -210,6 +210,8 @@ ruff check .
 mypy axes/ scanner.py scoring.py report.py --ignore-missing-imports
 ```
 
-## Licence
+## License
 
-MIT
+MIT License — Copyright (c) 2026 [Mark Systems](https://marksystems.ca)
+
+See [LICENSE](LICENSE) for details.
