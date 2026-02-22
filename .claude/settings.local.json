@@ -27,7 +27,14 @@
       "Bash(git add:*)",
       "Bash(git commit:*)",
       "Bash(trash:*)",
-      "Bash(gio trash:*)"
+      "Bash(gio trash:*)",
+      "Bash(gh repo clone:*)",
+      "Bash(pdflatex:*)",
+      "Bash(dpkg:*)",
+      "Bash(apt list:*)",
+      "Bash(xargs rm -f:*)",
+      "Bash(find:*)",
+      "Bash(unzip:*)"
     ]
   }
 }
