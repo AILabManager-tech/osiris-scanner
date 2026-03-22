@@ -215,3 +215,57 @@ mypy axes/ scanner.py scoring.py report.py --ignore-missing-imports
 MIT License — Copyright (c) 2026 [Mark Systems](https://marksystems.ca)
 
 See [LICENSE](LICENSE) for details.
+
+---
+
+# OSIRIS Scanner — Website Operational Health Score
+
+Composite score (0-10) measuring the **operational health** of a website.
+
+OSIRIS aggregates results from third-party tools across 4 axes:
+**Performance (O)** + **Security (S)** + **Intrusion (I)** + **Resources (R)**.
+
+> **Disclaimer**: OSIRIS is an automated observation tool, not a pentest or compliance certification. Scores are indicative and subject to variance.
+
+## Scoring Formula
+
+```
+mu_osiris = Performance × 0.20 + Security × 0.30 + Intrusion × 0.30 + Resource × 0.20
+```
+
+| Axis | Weight | Tool | Measurement |
+|------|-------:|------|-------------|
+| O — Performance | 20% | Lighthouse CLI | Core Web Vitals, 0-100 normalized to 0-10 |
+| S — Security | 30% | Mozilla Observatory + Headers | Grade + security headers presence |
+| I — Intrusion | 30% | Blocklist Analysis (fast) / Playwright (deep) | Trackers detected |
+| R — Resource | 20% | Page Weight + Website Carbon | Page weight + estimated gCO2 |
+
+## Features
+
+- Two scan modes: **fast** (HTML parsing) and **deep** (Playwright headless browser)
+- Multi-run Lighthouse with median stabilization (`--runs 3`)
+- JSON + Markdown report generation
+- Scan history with trend tracking
+- Multi-site calibration tool
+- Graceful degradation (partial scores on axis failure)
+- 110+ known tracker domains in blocklist
+- ~156 unit tests
+
+## Quick Start
+
+```bash
+# Install
+python -m venv .venv && source .venv/bin/activate
+pip install -e ".[dev]"
+npm install -g lighthouse
+
+# Basic scan
+python scanner.py --url https://example.com
+
+# Deep scan with reports
+python scanner.py --url https://example.com --mode deep --runs 3 --output report
+```
+
+## License
+
+MIT License — Copyright (c) 2026 [Mark Systems](https://marksystems.ca)
