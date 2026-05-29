@@ -10,9 +10,7 @@ from report import generate_json_report, generate_markdown_report, generate_pdf_
 from scoring import compute_osiris_score, get_grade
 
 
-def _mock_axis_result(
-    score: float, tool: str, details: dict | None = None
-) -> AxisResult:
+def _mock_axis_result(score: float, tool: str, details: dict | None = None) -> AxisResult:
     """Helper pour créer un AxisResult mock."""
     return AxisResult(
         score=score,
@@ -27,37 +25,53 @@ class TestEndToEndWithMocks:
 
     def _make_full_results(self) -> dict[str, AxisResult]:
         return {
-            "O": _mock_axis_result(7.5, "Lighthouse", {
-                "lighthouse_score": 75.0,
-                "metrics": {},
-            }),
-            "S": _mock_axis_result(6.0, "Mozilla Observatory + Headers", {
-                "observatory_grade": "C+",
-                "observatory_score_raw": 60,
-                "observatory_tests_passed": 7,
-                "observatory_tests_failed": 3,
-                "headers_score": 5.0,
-                "headers_found": ["strict-transport-security"],
-                "headers_missing": ["content-security-policy"],
-            }),
-            "I": _mock_axis_result(8.0, "OSIRIS Blocklist Analysis", {
-                "trackers_found": 3,
-                "tracker_domains": ["google-analytics.com"],
-                "third_party_domains": ["cdn.example.com"],
-                "first_party_domains": ["example.com"],
-                "total_domains": 5,
-                "first_party_ratio": 0.20,
-            }),
-            "R": _mock_axis_result(9.0, "Page Weight + Website Carbon API", {
-                "page_weight_bytes": 350000,
-                "page_weight_kb": 341.8,
-                "resource_count": 12,
-                "gco2": 0.035,
-                "green_hosting": True,
-                "carbon_source": "Website Carbon API",
-                "carbon_rating": "A",
-                "cleaner_than": 0.85,
-            }),
+            "O": _mock_axis_result(
+                7.5,
+                "Lighthouse",
+                {
+                    "lighthouse_score": 75.0,
+                    "metrics": {},
+                },
+            ),
+            "S": _mock_axis_result(
+                6.0,
+                "Mozilla Observatory + Headers",
+                {
+                    "observatory_grade": "C+",
+                    "observatory_score_raw": 60,
+                    "observatory_tests_passed": 7,
+                    "observatory_tests_failed": 3,
+                    "headers_score": 5.0,
+                    "headers_found": ["strict-transport-security"],
+                    "headers_missing": ["content-security-policy"],
+                },
+            ),
+            "I": _mock_axis_result(
+                8.0,
+                "OSIRIS Blocklist Analysis",
+                {
+                    "trackers_found": 3,
+                    "tracker_domains": ["google-analytics.com"],
+                    "third_party_domains": ["cdn.example.com"],
+                    "first_party_domains": ["example.com"],
+                    "total_domains": 5,
+                    "first_party_ratio": 0.20,
+                },
+            ),
+            "R": _mock_axis_result(
+                9.0,
+                "Page Weight + Website Carbon API",
+                {
+                    "page_weight_bytes": 350000,
+                    "page_weight_kb": 341.8,
+                    "resource_count": 12,
+                    "gco2": 0.035,
+                    "green_hosting": True,
+                    "carbon_source": "Website Carbon API",
+                    "carbon_rating": "A",
+                    "cleaner_than": 0.85,
+                },
+            ),
         }
 
     def test_scoring_pipeline(self) -> None:
@@ -78,7 +92,10 @@ class TestEndToEndWithMocks:
         grade = get_grade(score)
 
         json_path = generate_json_report(
-            "https://example.com", results, score, grade,
+            "https://example.com",
+            results,
+            score,
+            grade,
             output_dir=str(tmp_path),
         )
 
@@ -105,8 +122,12 @@ class TestEndToEndWithMocks:
 
         scan_meta = {"mode": "deep", "runs": 3, "timeouts": 1}
         json_path = generate_json_report(
-            "https://example.com", results, score, grade,
-            output_dir=str(tmp_path), scan_meta=scan_meta,
+            "https://example.com",
+            results,
+            score,
+            grade,
+            output_dir=str(tmp_path),
+            scan_meta=scan_meta,
         )
 
         data = json.loads(json_path.read_text(encoding="utf-8"))
@@ -124,7 +145,10 @@ class TestEndToEndWithMocks:
         grade = get_grade(score)
 
         json_path = generate_json_report(
-            "https://example.com", results, score, grade,
+            "https://example.com",
+            results,
+            score,
+            grade,
             output_dir=str(tmp_path),
         )
 
@@ -140,7 +164,10 @@ class TestEndToEndWithMocks:
         grade = get_grade(score)
 
         md_path = generate_markdown_report(
-            "https://example.com", results, score, grade,
+            "https://example.com",
+            results,
+            score,
+            grade,
             output_dir=str(tmp_path),
         )
 
@@ -183,8 +210,12 @@ class TestEndToEndWithMocks:
 
         scan_meta = {"mode": "deep", "runs": 3, "timeouts": 0}
         md_path = generate_markdown_report(
-            "https://example.com", results, score, grade,
-            output_dir=str(tmp_path), scan_meta=scan_meta,
+            "https://example.com",
+            results,
+            score,
+            grade,
+            output_dir=str(tmp_path),
+            scan_meta=scan_meta,
         )
 
         content = md_path.read_text(encoding="utf-8")
@@ -206,7 +237,10 @@ class TestEndToEndWithMocks:
         assert grade == "Exemplaire"
 
         json_path = generate_json_report(
-            "https://perfect.example", results, score, grade,
+            "https://perfect.example",
+            results,
+            score,
+            grade,
             output_dir=str(tmp_path),
         )
         data = json.loads(json_path.read_text(encoding="utf-8"))
@@ -234,7 +268,10 @@ class TestEndToEndWithMocks:
         grade = get_grade(score)
 
         pdf_path = generate_pdf_report(
-            "https://example.com", results, score, grade,
+            "https://example.com",
+            results,
+            score,
+            grade,
             output_dir=str(tmp_path),
         )
 
@@ -252,11 +289,17 @@ class TestEndToEndWithMocks:
         grade = get_grade(score)
 
         json_path = generate_json_report(
-            "https://example.com", results, score, grade,
+            "https://example.com",
+            results,
+            score,
+            grade,
             output_dir=str(tmp_path),
         )
         md_path = generate_markdown_report(
-            "https://example.com", results, score, grade,
+            "https://example.com",
+            results,
+            score,
+            grade,
             output_dir=str(tmp_path),
         )
 

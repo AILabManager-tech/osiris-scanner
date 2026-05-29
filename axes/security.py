@@ -93,9 +93,10 @@ async def _fetch_observatory(host: str) -> dict[str, Any]:
 
     timeout = aiohttp.ClientTimeout(total=OBSERVATORY_TIMEOUT_SECONDS)
     try:
-        async with aiohttp.ClientSession(timeout=timeout) as session, session.post(
-            OBSERVATORY_API_URL, params={"host": host}
-        ) as response:
+        async with (
+            aiohttp.ClientSession(timeout=timeout) as session,
+            session.post(OBSERVATORY_API_URL, params={"host": host}) as response,
+        ):
             response.raise_for_status()
             data: dict[str, Any] = await response.json()
     except TimeoutError:
@@ -134,12 +135,12 @@ async def _fetch_headers(url: str) -> dict[str, str]:
             # HEAD d'abord, fallback GET si le serveur refuse HEAD
             session.head(url, allow_redirects=True) as response,
         ):
-                if response.status >= 400:
-                    async with session.get(url, allow_redirects=True) as get_resp:
-                        get_resp.raise_for_status()
-                        return {k.lower(): v for k, v in get_resp.headers.items()}
-                response.raise_for_status()
-                return {k.lower(): v for k, v in response.headers.items()}
+            if response.status >= 400:
+                async with session.get(url, allow_redirects=True) as get_resp:
+                    get_resp.raise_for_status()
+                    return {k.lower(): v for k, v in get_resp.headers.items()}
+            response.raise_for_status()
+            return {k.lower(): v for k, v in response.headers.items()}
     except TimeoutError:
         raise RuntimeError(
             f"Headers HTTP timeout après {HEADERS_TIMEOUT_SECONDS}s pour {url}"

@@ -16,9 +16,9 @@ from scoring import compute_osiris_score, get_grade
 
 async def scan_site(url: str) -> dict | None:
     """Scanne un site et retourne les résultats."""
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"Scan: {url}")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
 
     results = {}
 
@@ -66,10 +66,7 @@ async def scan_site(url: str) -> dict | None:
         "url": url,
         "score": score,
         "grade": grade,
-        "axes": {
-            k: {"score": r.score, "details": r.details}
-            for k, r in results.items()
-        },
+        "axes": {k: {"score": r.score, "details": r.details} for k, r in results.items()},
     }
 
 
@@ -103,9 +100,9 @@ async def main() -> None:
     print(f"\nRésultats sauvegardés: {out_path}")
 
     # Tableau récapitulatif
-    print(f"\n{'='*70}")
+    print(f"\n{'=' * 70}")
     print(f"{'Site':<35} {'O':>5} {'S':>5} {'I':>5} {'R':>5} {'OSIRIS':>7} {'Grade':<12}")
-    print(f"{'-'*70}")
+    print(f"{'-' * 70}")
     for r in all_results:
         a = r["axes"]
         print(

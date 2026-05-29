@@ -145,7 +145,7 @@ async def scan(url: str) -> AxisResult:
             url,
             "--output=json",
             f"--output-path={output_path}",
-            '--chrome-flags=--headless=new --no-sandbox --disable-gpu',
+            "--chrome-flags=--headless=new --no-sandbox --disable-gpu",
             "--quiet",
         ]
 
@@ -173,9 +173,7 @@ async def scan(url: str) -> AxisResult:
 
         if process.returncode != 0:
             error_msg = stderr.decode(errors="replace").strip()
-            raise RuntimeError(
-                f"Lighthouse a échoué (code {process.returncode}) : {error_msg}"
-            )
+            raise RuntimeError(f"Lighthouse a échoué (code {process.returncode}) : {error_msg}")
 
         if not output_path.exists():
             raise RuntimeError("Lighthouse n'a pas généré de rapport JSON")

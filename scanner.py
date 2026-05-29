@@ -41,8 +41,7 @@ discover_axes()
 def _get_axes() -> list[tuple[str, str, object, str, tuple[type[Exception], ...]]]:
     """Construit la liste AXES depuis le registre de plugins."""
     return [
-        (a.key, a.label, a.scan_fn, f"{int(a.weight * 100)}%", a.exc_types)
-        for a in registry.all()
+        (a.key, a.label, a.scan_fn, f"{int(a.weight * 100)}%", a.exc_types) for a in registry.all()
     ]
 
 
@@ -162,13 +161,16 @@ async def _scan_axis(
                 scan_context["lighthouse_raw"] = result.raw_output
         elif axis_key == "I" and mode == "deep":
             from axes.intrusion import scan_deep as scan_intrusion_deep
+
             result = await scan_intrusion_deep(url)
         elif axis_key == "R":
             if mode == "deep":
                 from axes.resource import scan_deep as scan_resource_deep
+
                 result = await scan_resource_deep(url)
             else:
                 from axes.resource import scan as scan_resource_fn
+
                 result = await scan_resource_fn(url, scan_context=scan_context)
         else:
             result = await scan_fn(url)
@@ -219,9 +221,7 @@ async def _run_scan(
             failed_axes.append(axis_key)
 
     if failed_axes:
-        console.print(
-            f"\n[yellow]Axes en échec : {', '.join(failed_axes)}[/yellow]"
-        )
+        console.print(f"\n[yellow]Axes en échec : {', '.join(failed_axes)}[/yellow]")
         if not results:
             console.print("\n[red]Aucun axe n'a réussi. Scan avorté.[/red]\n")
             return
@@ -258,8 +258,7 @@ async def _run_scan(
         delta_sign = "+" if delta_val >= 0 else ""
         delta_color = "green" if delta_val >= 0 else "red"
         console.print(
-            f"[{delta_color}]Delta vs précédent : "
-            f"{delta_sign}{delta_val}/10[/{delta_color}]"
+            f"[{delta_color}]Delta vs précédent : {delta_sign}{delta_val}/10[/{delta_color}]"
         )
         if delta["improved_axes"]:
             console.print(f"  Améliorés : {', '.join(delta['improved_axes'])}")
@@ -285,10 +284,18 @@ async def _run_scan(
             "timeouts": len(failed_axes),
         }
         json_path = generate_json_report(
-            url, results, osiris_score, grade, scan_meta=scan_meta,
+            url,
+            results,
+            osiris_score,
+            grade,
+            scan_meta=scan_meta,
         )
         md_path = generate_markdown_report(
-            url, results, osiris_score, grade, scan_meta=scan_meta,
+            url,
+            results,
+            osiris_score,
+            grade,
+            scan_meta=scan_meta,
         )
         console.print(f"[green]Rapport JSON[/green] : {json_path}")
         console.print(f"[green]Rapport Markdown[/green] : {md_path}")
@@ -321,9 +328,7 @@ def _setup_logging(verbose: bool) -> None:
     """
     level = logging.DEBUG if verbose else logging.WARNING
     handler = logging.StreamHandler()
-    handler.setFormatter(logging.Formatter(
-        "[%(levelname)s] %(name)s — %(message)s"
-    ))
+    handler.setFormatter(logging.Formatter("[%(levelname)s] %(name)s — %(message)s"))
     osiris_logger = logging.getLogger("osiris")
     osiris_logger.setLevel(level)
     if not osiris_logger.handlers:

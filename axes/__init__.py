@@ -73,6 +73,7 @@ class AxisRegistry:
         Returns:
             Décorateur qui enregistre la fonction et la retourne inchangée.
         """
+
         def decorator(fn: F) -> F:
             self._axes[key] = AxisInfo(
                 key=key,
@@ -84,6 +85,7 @@ class AxisRegistry:
             )
             logger.debug("Axe %s (%s) enregistré, poids=%.2f", key, label, weight)
             return fn
+
         return decorator
 
     def get(self, key: str) -> AxisInfo | None:

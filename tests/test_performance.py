@@ -102,13 +102,10 @@ class TestParseLighthouseJson:
 
 
 class TestScan:
-
     async def test_scan_success(self, tmp_path: Path) -> None:
         """Test scan avec un mock de subprocess Lighthouse."""
         lighthouse_json = {
-            "categories": {
-                "performance": {"score": 0.92}
-            },
+            "categories": {"performance": {"score": 0.92}},
             "audits": {
                 "first-contentful-paint": {
                     "displayValue": "0.8 s",
@@ -141,7 +138,6 @@ class TestScan:
         assert result.tool_used == "Lighthouse"
         assert result.details["lighthouse_score"] == 92.0
 
-
     async def test_scan_lighthouse_not_found(self) -> None:
         """Test scan quand Lighthouse n'est pas installé."""
         with (
@@ -149,7 +145,6 @@ class TestScan:
             pytest.raises(FileNotFoundError),
         ):
             await scan("https://example.com")
-
 
     async def test_scan_lighthouse_failure(self, tmp_path: Path) -> None:
         """Test scan quand Lighthouse retourne une erreur."""
@@ -169,13 +164,10 @@ class TestScan:
             with pytest.raises(RuntimeError, match="échoué"):
                 await scan("https://example.com")
 
-
     async def test_scan_timeout_clean_exit(self) -> None:
         """Test that timeout kills process cleanly without RuntimeError at exit."""
         mock_process = AsyncMock()
-        mock_process.communicate = AsyncMock(
-            side_effect=TimeoutError("timeout")
-        )
+        mock_process.communicate = AsyncMock(side_effect=TimeoutError("timeout"))
         mock_process.kill = MagicMock()
         mock_process.wait = AsyncMock()
 
@@ -197,7 +189,6 @@ class TestScan:
 
 class TestMultiRun:
     """Tests for median multi-run strategy."""
-
 
     async def test_median_of_3_runs(self) -> None:
         """Median of 3 runs returns middle value."""
@@ -222,11 +213,12 @@ class TestMultiRun:
         assert result.details["runs_succeeded"] == 3
         assert len(result.details["runs"]) == 3
 
-
     async def test_partial_timeout_uses_remaining(self) -> None:
         """If 1 of 3 runs times out, uses median of remaining 2."""
         good = AxisResult(
-            score=8.0, details={"lighthouse_score": 80.0}, tool_used="Lighthouse",
+            score=8.0,
+            details={"lighthouse_score": 80.0},
+            tool_used="Lighthouse",
         )
         call_count = 0
 
@@ -243,7 +235,6 @@ class TestMultiRun:
         assert result.score == 8.0
         assert result.details["runs_succeeded"] == 2
         assert result.details["runs_failed"] == 1
-
 
     async def test_all_timeout_raises(self) -> None:
         """If all runs fail, raises RuntimeError."""

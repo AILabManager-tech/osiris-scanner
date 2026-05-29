@@ -16,8 +16,9 @@ Grades :
 
 from __future__ import annotations
 
-import math
 import logging
+import math
+
 from axes.performance import AxisResult
 
 logger = logging.getLogger("osiris")
@@ -45,6 +46,7 @@ def _get_weights() -> dict[str, float]:
     """Retourne les poids depuis le registre de plugins si disponible."""
     try:
         from axes import registry
+
         if len(registry) > 0:
             return registry.weights()
     except ImportError:
@@ -78,7 +80,7 @@ def compute_osiris_score(results: dict[str, AxisResult]) -> float:
         raise ValueError("Aucun axe fourni pour le calcul OSIRIS")
 
     weights = _get_weights()
-    
+
     # Vérifier si tous les axes requis sont présents
     missing = set(weights.keys()) - set(results.keys())
     if missing:
@@ -88,12 +90,19 @@ def compute_osiris_score(results: dict[str, AxisResult]) -> float:
     # Calcul géométrique
     weighted_ln_sum = 0.0
     epsilon = 0.1  # Plancher pour éviter ln(0) et permettre l'effondrement contrôlé
-    
+
     for axis, weight in weights.items():
         score = max(epsilon, results[axis].score)
         ln_val = math.log(score)
         weighted_ln_sum += weight * ln_val
-        logger.debug("Axe %s: score=%.1f, poids=%.2f, ln=%.4f, weighted=%.4f", axis, score, weight, ln_val, weight * ln_val)
+        logger.debug(
+            "Axe %s: score=%.1f, poids=%.2f, ln=%.4f, weighted=%.4f",
+            axis,
+            score,
+            weight,
+            ln_val,
+            weight * ln_val,
+        )
 
     final_score = math.exp(weighted_ln_sum)
     logger.debug("Score final calculé: %.4f (weighted_ln_sum=%.4f)", final_score, weighted_ln_sum)
@@ -114,7 +123,7 @@ def compute_partial_score(results: dict[str, AxisResult]) -> float:
 
     weighted_ln_sum = 0.0
     epsilon = 0.1
-    
+
     for axis, result in results.items():
         if axis in weights:
             normalized_weight = weights[axis] / available_weight_sum

@@ -20,12 +20,8 @@ logger = logging.getLogger("osiris")
 BLOCKLIST_PATH: str = "blocklists/trackers.json"
 
 # Sources de blocklists
-DISCONNECT_URL: str = (
-    "https://raw.githubusercontent.com/nicedayreg/servicelist/main/services.json"
-)
-EASYPRIVACY_URL: str = (
-    "https://easylist.to/easylist/easyprivacy.txt"
-)
+DISCONNECT_URL: str = "https://raw.githubusercontent.com/nicedayreg/servicelist/main/services.json"
+EASYPRIVACY_URL: str = "https://easylist.to/easylist/easyprivacy.txt"
 
 
 async def _fetch_disconnect_domains() -> set[str]:
@@ -60,9 +56,7 @@ async def _fetch_disconnect_domains() -> set[str]:
                         for _url_key, domain_list in service_data.items():
                             if isinstance(domain_list, list):
                                 domains.update(
-                                    d.lower().strip()
-                                    for d in domain_list
-                                    if isinstance(d, str)
+                                    d.lower().strip() for d in domain_list if isinstance(d, str)
                                 )
                             elif isinstance(domain_list, str):
                                 domains.add(domain_list.lower().strip())
@@ -84,10 +78,10 @@ async def _fetch_easyprivacy_domains() -> set[str]:
             aiohttp.ClientSession(timeout=timeout) as session,
             session.get(EASYPRIVACY_URL) as response,
         ):
-                if response.status != 200:
-                    logger.warning("EasyPrivacy HTTP %d", response.status)
-                    return set()
-                text = await response.text()
+            if response.status != 200:
+                logger.warning("EasyPrivacy HTTP %d", response.status)
+                return set()
+            text = await response.text()
     except (aiohttp.ClientError, Exception) as e:
         logger.warning("EasyPrivacy indisponible : %s", e)
         return set()

@@ -31,8 +31,8 @@ CARBON_API_TIMEOUT_SECONDS: int = 15
 REQUEST_USER_AGENT: str = "OSIRIS-Scanner/0.1 (Resource Audit)"
 
 # Seuils de scoring (interpolation linéaire)
-WEIGHT_THRESHOLD_PERFECT_BYTES: int = 500_000       # < 500 KB = 10/10
-WEIGHT_THRESHOLD_ZERO_BYTES: int = 5_000_000         # > 5 MB = 0/10
+WEIGHT_THRESHOLD_PERFECT_BYTES: int = 500_000  # < 500 KB = 10/10
+WEIGHT_THRESHOLD_ZERO_BYTES: int = 5_000_000  # > 5 MB = 0/10
 
 # Facteur SWD v4 pour calcul local (fallback si API Carbon down)
 # Source: Sustainable Web Design Model v4, gCO2/byte (moyenne globale)
@@ -53,19 +53,20 @@ async def _fetch_page_weight(url: str) -> tuple[int, str]:
     """
     timeout = aiohttp.ClientTimeout(total=PAGE_TIMEOUT_SECONDS)
     try:
-        async with aiohttp.ClientSession(timeout=timeout) as session, session.get(
-            url,
-            headers={"User-Agent": REQUEST_USER_AGENT},
-            allow_redirects=True,
-        ) as response:
+        async with (
+            aiohttp.ClientSession(timeout=timeout) as session,
+            session.get(
+                url,
+                headers={"User-Agent": REQUEST_USER_AGENT},
+                allow_redirects=True,
+            ) as response,
+        ):
             response.raise_for_status()
             content = await response.read()
             content_type = response.headers.get("content-type", "unknown")
             return len(content), content_type
     except TimeoutError:
-        raise RuntimeError(
-            f"Page timeout après {PAGE_TIMEOUT_SECONDS}s pour {url}"
-        ) from None
+        raise RuntimeError(f"Page timeout après {PAGE_TIMEOUT_SECONDS}s pour {url}") from None
     except aiohttp.ClientError as e:
         raise RuntimeError(f"Impossible de récupérer la page {url} : {e}") from e
 
@@ -80,13 +81,13 @@ def _count_resources(html: str) -> int:
         Nombre approximatif de ressources externes.
     """
     patterns = [
-        r'<script[^>]+src=',
-        r'<link[^>]+href=',
-        r'<img[^>]+src=',
-        r'<iframe[^>]+src=',
-        r'<video[^>]+src=',
-        r'<audio[^>]+src=',
-        r'<source[^>]+src=',
+        r"<script[^>]+src=",
+        r"<link[^>]+href=",
+        r"<img[^>]+src=",
+        r"<iframe[^>]+src=",
+        r"<video[^>]+src=",
+        r"<audio[^>]+src=",
+        r"<source[^>]+src=",
     ]
     count = 0
     for pattern in patterns:
@@ -108,11 +109,14 @@ async def _fetch_page_with_resources(url: str) -> tuple[int, int, str]:
     """
     timeout = aiohttp.ClientTimeout(total=PAGE_TIMEOUT_SECONDS)
     try:
-        async with aiohttp.ClientSession(timeout=timeout) as session, session.get(
-            url,
-            headers={"User-Agent": REQUEST_USER_AGENT},
-            allow_redirects=True,
-        ) as response:
+        async with (
+            aiohttp.ClientSession(timeout=timeout) as session,
+            session.get(
+                url,
+                headers={"User-Agent": REQUEST_USER_AGENT},
+                allow_redirects=True,
+            ) as response,
+        ):
             response.raise_for_status()
             content = await response.read()
             html = content.decode(response.get_encoding() or "utf-8", errors="replace")
@@ -120,9 +124,7 @@ async def _fetch_page_with_resources(url: str) -> tuple[int, int, str]:
             resource_count = _count_resources(html)
             return content_bytes, resource_count, html
     except TimeoutError:
-        raise RuntimeError(
-            f"Page timeout après {PAGE_TIMEOUT_SECONDS}s pour {url}"
-        ) from None
+        raise RuntimeError(f"Page timeout après {PAGE_TIMEOUT_SECONDS}s pour {url}") from None
     except aiohttp.ClientError as e:
         raise RuntimeError(f"Impossible de récupérer la page {url} : {e}") from e
 
@@ -162,10 +164,13 @@ async def _fetch_carbon_data(total_bytes: int, green: bool) -> dict[str, Any] | 
     """
     timeout = aiohttp.ClientTimeout(total=CARBON_API_TIMEOUT_SECONDS)
     try:
-        async with aiohttp.ClientSession(timeout=timeout) as session, session.get(
-            CARBON_API_URL,
-            params={"bytes": total_bytes, "green": 1 if green else 0},
-        ) as response:
+        async with (
+            aiohttp.ClientSession(timeout=timeout) as session,
+            session.get(
+                CARBON_API_URL,
+                params={"bytes": total_bytes, "green": 1 if green else 0},
+            ) as response,
+        ):
             if response.status == 200:
                 return await response.json()
     except (TimeoutError, aiohttp.ClientError, ValueError):

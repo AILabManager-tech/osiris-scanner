@@ -104,9 +104,7 @@ class ScanHistory:
         self._conn.commit()
         return cursor.lastrowid or 0
 
-    def get_history(
-        self, domain: str, limit: int = 20
-    ) -> list[dict[str, Any]]:
+    def get_history(self, domain: str, limit: int = 20) -> list[dict[str, Any]]:
         """Récupère l'historique des scans pour un domaine.
 
         Args:

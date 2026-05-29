@@ -98,9 +98,24 @@ def extract_root_domain(url: str) -> str:
 
     # TLD composés courants (2 parties)
     compound_tlds = {
-        "co.uk", "com.au", "com.br", "co.nz", "co.za", "co.in",
-        "org.uk", "net.au", "co.jp", "or.jp", "ne.jp", "ac.uk",
-        "gov.uk", "com.mx", "com.ar", "com.co", "co.kr", "go.kr",
+        "co.uk",
+        "com.au",
+        "com.br",
+        "co.nz",
+        "co.za",
+        "co.in",
+        "org.uk",
+        "net.au",
+        "co.jp",
+        "or.jp",
+        "ne.jp",
+        "ac.uk",
+        "gov.uk",
+        "com.mx",
+        "com.ar",
+        "com.co",
+        "co.kr",
+        "go.kr",
     }
 
     if len(parts) >= 3:

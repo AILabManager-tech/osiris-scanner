@@ -46,6 +46,7 @@ def _get_git_commit() -> str | None:
         pass
     return None
 
+
 AXIS_LABELS: dict[str, str] = {
     "O": "Performance",
     "S": "Security",
@@ -62,20 +63,13 @@ RECOMMENDATIONS: dict[str, dict[str, str]] = {
             " minifiez JS/CSS, activez le lazy loading."
         ),
         "mid": (
-            "Performance acceptable. Envisagez un CDN"
-            " et le préchargement des ressources critiques."
+            "Performance acceptable. Envisagez un CDN et le préchargement des ressources critiques."
         ),
         "high": "Excellente performance. Maintenez les bonnes pratiques.",
     },
     "S": {
-        "low": (
-            "Ajoutez les headers manquants :"
-            " HSTS, CSP, X-Frame-Options, Referrer-Policy."
-        ),
-        "mid": (
-            "Sécurité partielle. Renforcez la CSP"
-            " et activez Permissions-Policy."
-        ),
+        "low": ("Ajoutez les headers manquants : HSTS, CSP, X-Frame-Options, Referrer-Policy."),
+        "mid": ("Sécurité partielle. Renforcez la CSP et activez Permissions-Policy."),
         "high": "Bonne posture sécurité. Envisagez un audit régulier.",
     },
     "I": {
@@ -83,10 +77,7 @@ RECOMMENDATIONS: dict[str, dict[str, str]] = {
             "Trop de trackers. Réduisez les scripts tiers"
             " et utilisez un gestionnaire de consentement."
         ),
-        "mid": (
-            "Quelques trackers présents."
-            " Vérifiez la conformité RGPD/CCPA."
-        ),
+        "mid": ("Quelques trackers présents. Vérifiez la conformité RGPD/CCPA."),
         "high": "Excellent respect de la vie privée. Peu de trackers.",
     },
     "R": {
@@ -95,8 +86,7 @@ RECOMMENDATIONS: dict[str, dict[str, str]] = {
             " réduisez les requêtes HTTP, optimisez les images."
         ),
         "mid": (
-            "Poids acceptable. Utilisez des formats modernes"
-            " (WebP, AVIF) et la compression Brotli."
+            "Poids acceptable. Utilisez des formats modernes (WebP, AVIF) et la compression Brotli."
         ),
         "high": "Page légère et éco-responsable. Empreinte minimale.",
     },
@@ -325,8 +315,7 @@ def generate_markdown_report(
     lines.append("Les pondérations reflètent l'importance relative de chaque axe :")
     lines.append("- Sécurité et Intrusion (30% chacun) : priorité à la protection des utilisateurs")
     lines.append(
-        "- Performance et Resource (20% chacun) :"
-        " qualité de l'expérience et éco-responsabilité"
+        "- Performance et Resource (20% chacun) : qualité de l'expérience et éco-responsabilité"
     )
     lines.append("")
 
@@ -373,8 +362,8 @@ def generate_markdown_report(
             axis_key in report_data["axes"]
             and report_data["axes"][axis_key].get("details", {}).get("mode") == "deep"
         ):
-                scan_mode = "deep"
-                break
+            scan_mode = "deep"
+            break
 
     # Limitations
     lines.append("## Limitations")
@@ -392,21 +381,12 @@ def generate_markdown_report(
     else:
         lines.append("- **Mode** : deep (Playwright headless)")
         lines.append(
-            "- Axe I : capture les network requests reelles"
-            " — detecte les trackers JS dynamiques"
+            "- Axe I : capture les network requests reelles — detecte les trackers JS dynamiques"
         )
-        lines.append(
-            "- Axe R : mesure le poids total transfere"
-            " — inclut tous les assets"
-        )
-    lines.append(
-        "- Axe O : variance Lighthouse ~10% entre runs"
-        " (utiliser --runs 3 pour mediane)"
-    )
+        lines.append("- Axe R : mesure le poids total transfere — inclut tous les assets")
+    lines.append("- Axe O : variance Lighthouse ~10% entre runs (utiliser --runs 3 pour mediane)")
     lines.append("- Axe S : Observatory peut retourner des resultats caches (24h)")
-    lines.append(
-        "- Ce rapport n'est pas un pentest ni une certification de conformite"
-    )
+    lines.append("- Ce rapport n'est pas un pentest ni une certification de conformite")
     lines.append("")
 
     # Footer
@@ -486,10 +466,16 @@ def generate_pdf_report(
 
     styles = getSampleStyleSheet()
     title_style = ParagraphStyle(
-        "OsirisTitle", parent=styles["Title"], fontSize=18, spaceAfter=12,
+        "OsirisTitle",
+        parent=styles["Title"],
+        fontSize=18,
+        spaceAfter=12,
     )
     heading_style = ParagraphStyle(
-        "OsirisHeading", parent=styles["Heading2"], fontSize=14, spaceAfter=8,
+        "OsirisHeading",
+        parent=styles["Heading2"],
+        fontSize=14,
+        spaceAfter=8,
     )
     body_style = styles["Normal"]
 
@@ -502,7 +488,7 @@ def generate_pdf_report(
     # Meta
     elements.append(Paragraph(f"<b>URL</b> : {url}", body_style))
     elements.append(Paragraph(f"<b>Date</b> : {report_data['scan_date']}", body_style))
-    version = report_data['osiris_version']
+    version = report_data["osiris_version"]
     elements.append(Paragraph(f"<b>Version</b> : OSIRIS {version}", body_style))
     elements.append(Spacer(1, 4 * mm))
 
@@ -515,11 +501,13 @@ def generate_pdf_report(
     }.get(grade, colors.black)
 
     elements.append(Paragraph("Score Global", heading_style))
-    elements.append(Paragraph(
-        f'<font size="16" color="{grade_color.hexval()}">'
-        f'<b>{osiris_score}/10 ({grade})</b></font>',
-        body_style,
-    ))
+    elements.append(
+        Paragraph(
+            f'<font size="16" color="{grade_color.hexval()}">'
+            f"<b>{osiris_score}/10 ({grade})</b></font>",
+            body_style,
+        )
+    )
     elements.append(Spacer(1, 6 * mm))
 
     # Tableau des axes
@@ -528,26 +516,32 @@ def generate_pdf_report(
     for axis_key in ["O", "S", "I", "R"]:
         if axis_key in report_data["axes"]:
             a = report_data["axes"][axis_key]
-            table_data.append([
-                f"{axis_key} — {a['label']}",
-                f"{a['score']}/10",
-                f"{int(a['weight'] * 100)}%",
-                a["tool_used"],
-            ])
+            table_data.append(
+                [
+                    f"{axis_key} — {a['label']}",
+                    f"{a['score']}/10",
+                    f"{int(a['weight'] * 100)}%",
+                    a["tool_used"],
+                ]
+            )
 
     table = RLTable(table_data, colWidths=[120, 60, 50, 250])
-    table.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1A237E")),
-        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-        ("FONTSIZE", (0, 0), (-1, 0), 10),
-        ("ALIGN", (1, 0), (2, -1), "CENTER"),
-        ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
-        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#F5F5F5")]),
-        ("FONTSIZE", (0, 1), (-1, -1), 9),
-        ("TOPPADDING", (0, 0), (-1, -1), 4),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
-    ]))
+    table.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1A237E")),
+                ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                ("FONTSIZE", (0, 0), (-1, 0), 10),
+                ("ALIGN", (1, 0), (2, -1), "CENTER"),
+                ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
+                ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#F5F5F5")]),
+                ("FONTSIZE", (0, 1), (-1, -1), 9),
+                ("TOPPADDING", (0, 0), (-1, -1), 4),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+            ]
+        )
+    )
     elements.append(table)
     elements.append(Spacer(1, 6 * mm))
 
@@ -558,28 +552,34 @@ def generate_pdf_report(
             a = report_data["axes"][axis_key]
             rec = a.get("recommendation", "")
             if rec:
-                elements.append(Paragraph(
-                    f"<b>{axis_key} — {a['label']}</b> : {rec}",
-                    body_style,
-                ))
+                elements.append(
+                    Paragraph(
+                        f"<b>{axis_key} — {a['label']}</b> : {rec}",
+                        body_style,
+                    )
+                )
                 elements.append(Spacer(1, 2 * mm))
 
     elements.append(Spacer(1, 6 * mm))
 
     # Formule
     elements.append(Paragraph("Méthodologie", heading_style))
-    elements.append(Paragraph(
-        f"<b>Formule</b> : {report_data['formula']}",
-        body_style,
-    ))
+    elements.append(
+        Paragraph(
+            f"<b>Formule</b> : {report_data['formula']}",
+            body_style,
+        )
+    )
     elements.append(Spacer(1, 4 * mm))
 
     # Footer
     elements.append(Spacer(1, 10 * mm))
-    elements.append(Paragraph(
-        f"<i>Rapport généré par OSIRIS Scanner v{OSIRIS_VERSION}</i>",
-        ParagraphStyle("Footer", parent=body_style, fontSize=8, textColor=colors.grey),
-    ))
+    elements.append(
+        Paragraph(
+            f"<i>Rapport généré par OSIRIS Scanner v{OSIRIS_VERSION}</i>",
+            ParagraphStyle("Footer", parent=body_style, fontSize=8, textColor=colors.grey),
+        )
+    )
 
     doc.build(elements)
 
@@ -611,10 +611,20 @@ def generate_report_with_history(
         Tuple (json_path, md_path).
     """
     json_path = generate_json_report(
-        url, results, osiris_score, grade, output_dir, scan_meta,
+        url,
+        results,
+        osiris_score,
+        grade,
+        output_dir,
+        scan_meta,
     )
     md_path = generate_markdown_report(
-        url, results, osiris_score, grade, output_dir, scan_meta,
+        url,
+        results,
+        osiris_score,
+        grade,
+        output_dir,
+        scan_meta,
     )
 
     # Persist and add convergence section
@@ -648,15 +658,14 @@ def generate_report_with_history(
             wc = WebConverger()
             trend = wc.analyze_trend(scores)
             extra_lines.append(f"**Tendance** : {trend}")
-            extra_lines.append(
-                f"**Historique** : {' -> '.join(f'{s:.1f}' for s in scores[-5:])}"
-            )
+            extra_lines.append(f"**Historique** : {' -> '.join(f'{s:.1f}' for s in scores[-5:])}")
             extra_lines.append("")
 
         if extra_lines:
             existing = md_path.read_text(encoding="utf-8")
             md_path.write_text(
-                existing + "\n".join(extra_lines), encoding="utf-8",
+                existing + "\n".join(extra_lines),
+                encoding="utf-8",
             )
 
     except ImportError:

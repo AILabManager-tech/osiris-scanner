@@ -44,10 +44,20 @@ class TestScanHistory:
         assert db.get_latest("unknown.com") is None
 
     def test_get_delta(self, db: ScanHistory) -> None:
-        db.save_scan("example.com", "https://example.com", 6.0, "À risque",
-                      {"O": 6.0, "S": 5.0, "I": 7.0, "R": 6.0})
-        db.save_scan("example.com", "https://example.com", 8.0, "Conforme",
-                      {"O": 8.0, "S": 7.0, "I": 9.0, "R": 8.0})
+        db.save_scan(
+            "example.com",
+            "https://example.com",
+            6.0,
+            "À risque",
+            {"O": 6.0, "S": 5.0, "I": 7.0, "R": 6.0},
+        )
+        db.save_scan(
+            "example.com",
+            "https://example.com",
+            8.0,
+            "Conforme",
+            {"O": 8.0, "S": 7.0, "I": 9.0, "R": 8.0},
+        )
 
         delta = db.get_delta("example.com")
         assert delta is not None
@@ -56,10 +66,20 @@ class TestScanHistory:
         assert len(delta["regressed_axes"]) == 0
 
     def test_get_delta_with_regression(self, db: ScanHistory) -> None:
-        db.save_scan("example.com", "https://example.com", 8.0, "Conforme",
-                      {"O": 9.0, "S": 8.0, "I": 7.0, "R": 8.0})
-        db.save_scan("example.com", "https://example.com", 6.0, "À risque",
-                      {"O": 5.0, "S": 8.0, "I": 5.0, "R": 6.0})
+        db.save_scan(
+            "example.com",
+            "https://example.com",
+            8.0,
+            "Conforme",
+            {"O": 9.0, "S": 8.0, "I": 7.0, "R": 8.0},
+        )
+        db.save_scan(
+            "example.com",
+            "https://example.com",
+            6.0,
+            "À risque",
+            {"O": 5.0, "S": 8.0, "I": 5.0, "R": 6.0},
+        )
 
         delta = db.get_delta("example.com")
         assert delta is not None
@@ -92,8 +112,7 @@ class TestScanHistory:
 
     def test_details_json(self, db: ScanHistory) -> None:
         details = {"mode": "deep", "runs": 3}
-        db.save_scan("example.com", "https://example.com", 7.0, "Conforme", {},
-                      details=details)
+        db.save_scan("example.com", "https://example.com", 7.0, "Conforme", {}, details=details)
 
         history = db.get_history("example.com")
         assert '"mode": "deep"' in history[0]["details_json"]

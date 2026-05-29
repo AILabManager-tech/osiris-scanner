@@ -56,7 +56,6 @@ class TestTTLCache:
             assert evicted == 1
             assert cache.get("fresh") == "val"
 
-
     async def test_get_or_set_cache_miss(self) -> None:
         cache = TTLCache(default_ttl=60)
 
@@ -66,7 +65,6 @@ class TestTTLCache:
         result = await cache.get_or_set("key", factory(), ttl=60)
         assert result == "computed"
         assert cache.get("key") == "computed"
-
 
     async def test_get_or_set_cache_hit(self) -> None:
         cache = TTLCache(default_ttl=60)

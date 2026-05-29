@@ -83,17 +83,18 @@ async def _fetch_page(url: str) -> str:
     """
     timeout = aiohttp.ClientTimeout(total=PAGE_TIMEOUT_SECONDS)
     try:
-        async with aiohttp.ClientSession(timeout=timeout) as session, session.get(
-            url,
-            headers={"User-Agent": REQUEST_USER_AGENT},
-            allow_redirects=True,
-        ) as response:
+        async with (
+            aiohttp.ClientSession(timeout=timeout) as session,
+            session.get(
+                url,
+                headers={"User-Agent": REQUEST_USER_AGENT},
+                allow_redirects=True,
+            ) as response,
+        ):
             response.raise_for_status()
             return await response.text()
     except TimeoutError:
-        raise RuntimeError(
-            f"Page timeout après {PAGE_TIMEOUT_SECONDS}s pour {url}"
-        ) from None
+        raise RuntimeError(f"Page timeout après {PAGE_TIMEOUT_SECONDS}s pour {url}") from None
     except aiohttp.ClientError as e:
         raise RuntimeError(f"Impossible de récupérer la page {url} : {e}") from e
 
@@ -249,7 +250,9 @@ async def scan_deep(url: str, blocklist_path: str | None = None) -> AxisResult:
             await browser.close()
 
     first_party, third_party, trackers = _classify_domains(
-        network_domains, site_domain, blocklist,
+        network_domains,
+        site_domain,
+        blocklist,
     )
 
     total_domains = len(first_party) + len(third_party) + len(trackers)
@@ -291,6 +294,7 @@ async def scan_auto(url: str, blocklist_path: str | None = None) -> AxisResult:
     """
     try:
         import playwright.async_api  # noqa: F401
+
         logger.debug("Playwright disponible — scan deep pour Axe I")
         result = await scan_deep(url, blocklist_path)
         return result

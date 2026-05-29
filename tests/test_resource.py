@@ -104,13 +104,7 @@ class TestExtractDomain:
 
 class TestExtractLighthouseWeight:
     def test_with_valid_lighthouse_data(self) -> None:
-        ctx = {
-            "lighthouse_raw": {
-                "audits": {
-                    "total-byte-weight": {"numericValue": 1500000}
-                }
-            }
-        }
+        ctx = {"lighthouse_raw": {"audits": {"total-byte-weight": {"numericValue": 1500000}}}}
         assert _extract_lighthouse_weight(ctx) == 1500000
 
     def test_without_lighthouse_data(self) -> None:
@@ -128,7 +122,6 @@ class TestExtractLighthouseWeight:
 
 
 class TestScan:
-
     async def test_scan_light_page(self) -> None:
         """Page légère → score élevé."""
         carbon_data = {
@@ -143,15 +136,20 @@ class TestScan:
         }
 
         with (
-            patch("axes.resource._fetch_page_with_resources", new_callable=AsyncMock,
-                  return_value=(200_000, 3, "<html></html>")),
+            patch(
+                "axes.resource._fetch_page_with_resources",
+                new_callable=AsyncMock,
+                return_value=(200_000, 3, "<html></html>"),
+            ),
             patch(
                 "axes.resource._check_green_hosting",
-                new_callable=AsyncMock, return_value=True,
+                new_callable=AsyncMock,
+                return_value=True,
             ),
             patch(
                 "axes.resource._fetch_carbon_data",
-                new_callable=AsyncMock, return_value=carbon_data,
+                new_callable=AsyncMock,
+                return_value=carbon_data,
             ),
         ):
             result = await scan("https://example.com")
@@ -160,7 +158,6 @@ class TestScan:
         assert result.details["page_weight_bytes"] == 200_000
         assert result.details["green_hosting"] is True
         assert result.details["gco2"] == 0.02
-
 
     async def test_scan_heavy_page(self) -> None:
         """Page lourde → score bas."""
@@ -176,15 +173,20 @@ class TestScan:
         }
 
         with (
-            patch("axes.resource._fetch_page_with_resources", new_callable=AsyncMock,
-                  return_value=(4_000_000, 15, "<html></html>")),
+            patch(
+                "axes.resource._fetch_page_with_resources",
+                new_callable=AsyncMock,
+                return_value=(4_000_000, 15, "<html></html>"),
+            ),
             patch(
                 "axes.resource._check_green_hosting",
-                new_callable=AsyncMock, return_value=False,
+                new_callable=AsyncMock,
+                return_value=False,
             ),
             patch(
                 "axes.resource._fetch_carbon_data",
-                new_callable=AsyncMock, return_value=carbon_data,
+                new_callable=AsyncMock,
+                return_value=carbon_data,
             ),
         ):
             result = await scan("https://heavy-site.com")
@@ -193,12 +195,14 @@ class TestScan:
         assert result.details["page_weight_bytes"] == 4_000_000
         assert result.details["green_hosting"] is False
 
-
     async def test_scan_carbon_api_down_fallback(self) -> None:
         """API Carbon down → fallback calcul local."""
         with (
-            patch("axes.resource._fetch_page_with_resources", new_callable=AsyncMock,
-                  return_value=(300_000, 2, "<html></html>")),
+            patch(
+                "axes.resource._fetch_page_with_resources",
+                new_callable=AsyncMock,
+                return_value=(300_000, 2, "<html></html>"),
+            ),
             patch("axes.resource._check_green_hosting", new_callable=AsyncMock, return_value=False),
             patch("axes.resource._fetch_carbon_data", new_callable=AsyncMock, return_value=None),
         ):
@@ -208,12 +212,14 @@ class TestScan:
         assert "estimation locale" in result.details["carbon_source"]
         assert result.details["gco2"] > 0.0
 
-
     async def test_scan_page_timeout(self) -> None:
         """Page timeout → RuntimeError."""
         with (
-            patch("axes.resource._fetch_page_with_resources", new_callable=AsyncMock,
-                  side_effect=RuntimeError("Page timeout après 30s pour https://slow-site.com")),
+            patch(
+                "axes.resource._fetch_page_with_resources",
+                new_callable=AsyncMock,
+                side_effect=RuntimeError("Page timeout après 30s pour https://slow-site.com"),
+            ),
             pytest.raises(RuntimeError, match="timeout"),
         ):
             await scan("https://slow-site.com")

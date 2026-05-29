@@ -46,7 +46,6 @@ class TestSaveBlocklist:
 
 
 class TestUpdateBlocklist:
-
     async def test_update_merges_sources(self, tmp_path: Path) -> None:
         # Create existing blocklist
         path = tmp_path / "trackers.json"
@@ -79,7 +78,6 @@ class TestUpdateBlocklist:
         assert "disconnect-tracker.com" in data["domains"]
         assert "easyprivacy-tracker.com" in data["domains"]
 
-
     async def test_update_handles_source_failure(self, tmp_path: Path) -> None:
         """If one source fails, still merges the other."""
         path = tmp_path / "trackers.json"
@@ -103,7 +101,6 @@ class TestUpdateBlocklist:
             stats = await update_blocklist(str(path))
 
         assert stats["total_count"] == 2  # existing + easyprivacy
-
 
     async def test_update_no_duplicates(self, tmp_path: Path) -> None:
         """Domains from multiple sources are deduplicated."""

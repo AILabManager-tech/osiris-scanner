@@ -14,11 +14,11 @@ logger = logging.getLogger("osiris")
 
 # TTL par défaut par type de données (en secondes)
 DEFAULT_TTLS: dict[str, int] = {
-    "observatory": 86400,   # 24h — Observatory cache interne
-    "carbon": 3600,         # 1h — données carbone changent rarement
-    "headers": 300,         # 5min — headers peuvent changer
-    "page": 300,            # 5min — contenu de page
-    "green_hosting": 86400, # 24h — statut d'hébergement vert
+    "observatory": 86400,  # 24h — Observatory cache interne
+    "carbon": 3600,  # 1h — données carbone changent rarement
+    "headers": 300,  # 5min — headers peuvent changer
+    "page": 300,  # 5min — contenu de page
+    "green_hosting": 86400,  # 24h — statut d'hébergement vert
 }
 
 

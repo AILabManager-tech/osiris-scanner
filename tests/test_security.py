@@ -124,7 +124,6 @@ class TestAnalyzeHeaders:
 
 
 class TestScan:
-
     async def test_scan_success(self) -> None:
         """Test scan avec mocks Observatory + headers."""
         observatory_data = {
@@ -144,7 +143,8 @@ class TestScan:
         with (
             patch(
                 "axes.security._fetch_observatory",
-                new_callable=AsyncMock, return_value=observatory_data,
+                new_callable=AsyncMock,
+                return_value=observatory_data,
             ),
             patch("axes.security._fetch_headers", new_callable=AsyncMock, return_value=raw_headers),
         ):
@@ -155,7 +155,6 @@ class TestScan:
         assert result.details["observatory_grade"] == "B+"
         assert "strict-transport-security" in result.details["headers_found"]
         assert "permissions-policy" in result.details["headers_missing"]
-
 
     async def test_scan_a_plus_all_headers(self) -> None:
         """Test scan avec grade A+ et tous les headers forts → score proche de 10."""
@@ -179,7 +178,8 @@ class TestScan:
         with (
             patch(
                 "axes.security._fetch_observatory",
-                new_callable=AsyncMock, return_value=observatory_data,
+                new_callable=AsyncMock,
+                return_value=observatory_data,
             ),
             patch("axes.security._fetch_headers", new_callable=AsyncMock, return_value=raw_headers),
         ):
@@ -187,7 +187,6 @@ class TestScan:
 
         assert result.score == 10.0
         assert result.details["observatory_grade"] == "A+"
-
 
     async def test_scan_f_no_headers(self) -> None:
         """Test scan avec grade F et aucun header → score très bas."""
@@ -202,7 +201,8 @@ class TestScan:
         with (
             patch(
                 "axes.security._fetch_observatory",
-                new_callable=AsyncMock, return_value=observatory_data,
+                new_callable=AsyncMock,
+                return_value=observatory_data,
             ),
             patch("axes.security._fetch_headers", new_callable=AsyncMock, return_value=raw_headers),
         ):
@@ -211,7 +211,6 @@ class TestScan:
         assert result.score < 2.0
         assert result.details["observatory_grade"] == "F"
         assert len(result.details["headers_missing"]) == 6
-
 
     async def test_scan_observatory_error(self) -> None:
         """Test scan quand Observatory retourne une erreur."""
@@ -227,7 +226,8 @@ class TestScan:
             ),
             patch(
                 "axes.security._fetch_headers",
-                new_callable=AsyncMock, return_value={},
+                new_callable=AsyncMock,
+                return_value={},
             ),
             pytest.raises(RuntimeError, match="Observatory erreur"),
         ):

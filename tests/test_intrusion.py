@@ -160,7 +160,6 @@ class TestComputeScore:
 
 
 class TestScan:
-
     async def test_scan_no_trackers(self, tmp_path: Path) -> None:
         """Page sans tracker → score 10."""
         blocklist_path = tmp_path / "trackers.json"
@@ -176,7 +175,6 @@ class TestScan:
 
         assert result.score == 10.0
         assert result.details["trackers_found"] == 0
-
 
     async def test_scan_with_trackers(self, tmp_path: Path) -> None:
         """Page avec trackers → score réduit."""
@@ -202,7 +200,6 @@ class TestScan:
         assert result.details["trackers_found"] == 3
         assert len(result.details["tracker_domains"]) == 3
 
-
     async def test_scan_page_error(self, tmp_path: Path) -> None:
         """Page inaccessible → RuntimeError."""
         blocklist_path = tmp_path / "trackers.json"
@@ -224,7 +221,6 @@ class TestScan:
 
 class TestScanAuto:
     """Tests for auto mode (Playwright fallback)."""
-
 
     async def test_auto_falls_back_to_html_when_no_playwright(self, tmp_path: Path) -> None:
         """When Playwright is not importable, falls back to fast scan."""
@@ -248,7 +244,6 @@ class TestScanAuto:
 
 class TestScanDeep:
     """Tests for deep mode (Playwright-based)."""
-
 
     async def test_deep_detects_dynamic_trackers(self, tmp_path: Path) -> None:
         """Deep mode detects trackers loaded via JS that fast misses."""
@@ -296,10 +291,12 @@ class TestScanDeep:
         mock_pw.__aexit__ = AsyncMock(return_value=False)
 
         with patch(
-            "playwright.async_api.async_playwright", return_value=mock_pw,
+            "playwright.async_api.async_playwright",
+            return_value=mock_pw,
         ):
             result = await scan_deep(
-                "https://example.com", blocklist_path=str(blocklist_path),
+                "https://example.com",
+                blocklist_path=str(blocklist_path),
             )
 
         assert result.details["mode"] == "deep"

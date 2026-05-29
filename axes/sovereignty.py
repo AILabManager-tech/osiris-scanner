@@ -7,8 +7,9 @@ Pénalise l'usage des GAFAM et les sorties de territoire hors Québec/Canada.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 import aiohttp
@@ -24,19 +25,27 @@ logger = logging.getLogger("osiris")
 
 GEOIP_API_URL: str = "http://ip-api.com/json"  # API de lookup (determinisme IP/ASN)
 GAFAM_ASNS: set[int] = {
-    15169, 139190, 139070, # Google
-    16509, 14618, 11624,   # Amazon
-    32934,                 # Facebook/Meta
-    714,                   # Apple
-    8075, 8068, 8069,      # Microsoft
+    15169,
+    139190,
+    139070,  # Google
+    16509,
+    14618,
+    11624,  # Amazon
+    32934,  # Facebook/Meta
+    714,  # Apple
+    8075,
+    8068,
+    8069,  # Microsoft
 }
 
 # Destinations autorisées (ISO Country Codes)
-ALLOWED_COUNTRIES: set[str] = {"CA"} # Canada (incluant Québec)
+ALLOWED_COUNTRIES: set[str] = {"CA"}  # Canada (incluant Québec)
+
 
 @dataclass
 class FlowInfo:
     """Informations sur un flux réseau capturé."""
+
     url: str
     ip: str
     host: str
@@ -46,14 +55,16 @@ class FlowInfo:
     is_gafam: bool = False
     is_outside: bool = False
 
+
 async def _get_geo_info(ip: str) -> dict[str, Any]:
     """Récupère les infos Géo-IP/ASN pour une adresse IP via API externe."""
-    # Note: ip-api.com est limité à 45 requêtes/min. Pour OSIRIS v5.0 industriel, 
+    # Note: ip-api.com est limité à 45 requêtes/min. Pour OSIRIS v5.0 industriel,
     # une base MaxMind locale (GeoLite2-ASN/City) est recommandée.
     try:
-        async with aiohttp.ClientSession() as session, session.get(
-            f"{GEOIP_API_URL}/{ip}?fields=status,message,countryCode,as,org"
-        ) as resp:
+        async with (
+            aiohttp.ClientSession() as session,
+            session.get(f"{GEOIP_API_URL}/{ip}?fields=status,message,countryCode,as,org") as resp,
+        ):
             if resp.status == 200:
                 data = await resp.json()
                 if data.get("status") == "success":
@@ -61,18 +72,13 @@ async def _get_geo_info(ip: str) -> dict[str, Any]:
                     as_raw = data.get("as", "")
                     asn = 0
                     if as_raw.startswith("AS"):
-                        try:
+                        with contextlib.suppress(IndexError, ValueError):
                             asn = int(as_raw.split()[0][2:])
-                        except (IndexError, ValueError):
-                            pass
-                    return {
-                        "country": data.get("countryCode"),
-                        "asn": asn,
-                        "org": data.get("org")
-                    }
+                    return {"country": data.get("countryCode"), "asn": asn, "org": data.get("org")}
     except Exception as e:
         logger.warning("Geo-IP lookup échoué pour %s : %s", ip, e)
     return {}
+
 
 @register_axis(
     "V",
@@ -95,7 +101,7 @@ async def scan(url: str) -> AxisResult:
         AxisResult avec le score souveraineté.
     """
     flows: dict[str, FlowInfo] = {}
-    
+
     async with async_playwright() as p:
         # Lancement en mode headless, sans bac à sable pour Docker si nécessaire
         browser = await p.chromium.launch(headless=True, args=["--no-sandbox"])
@@ -118,7 +124,7 @@ async def scan(url: str) -> AxisResult:
                 pass
 
         page.on("response", on_response)
-        
+
         try:
             # On attend networkidle pour capturer les scripts asynchrones et trackers
             await page.goto(url, wait_until="networkidle", timeout=60000)
@@ -135,8 +141,8 @@ async def scan(url: str) -> AxisResult:
     ips = list(flows.keys())
     tasks = [_get_geo_info(ip) for ip in ips]
     geo_results = await asyncio.gather(*tasks)
-    
-    for ip, geo in zip(ips, geo_results):
+
+    for ip, geo in zip(ips, geo_results, strict=False):
         flow = flows[ip]
         flow.country = geo.get("country", "Unknown")
         flow.asn = geo.get("asn", 0)
@@ -149,17 +155,17 @@ async def scan(url: str) -> AxisResult:
     score = 10.0
     gafam_flows = [f for f in flows.values() if f.is_gafam]
     outside_flows = [f for f in flows.values() if f.is_outside]
-    
+
     # Pénalité GAFAM (impact modéré par flux unique, max 4 pts)
     gafam_count = len(gafam_flows)
     if gafam_count > 0:
         score -= min(4.0, gafam_count * 0.5)
-        
+
     # Pénalité Sortie de Territoire (impact fort, max 5 pts)
     outside_count = len(outside_flows)
     if outside_count > 0:
         score -= min(5.0, outside_count * 1.0)
-        
+
     score = max(0.0, round(score, 1))
 
     return AxisResult(
@@ -172,8 +178,8 @@ async def scan(url: str) -> AxisResult:
             "summary": {
                 "gafam_orgs": sorted(list({f.org for f in gafam_flows})),
                 "outside_countries": sorted(list({f.country for f in outside_flows})),
-            }
+            },
         },
         tool_used="Playwright Dynamic Flow Mapping (GEARGRINDER)",
-        raw_output={ip: vars(f) for ip, f in flows.items()}
+        raw_output={ip: vars(f) for ip, f in flows.items()},
     )

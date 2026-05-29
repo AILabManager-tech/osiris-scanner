@@ -12,7 +12,6 @@ from utils import async_retry, extract_domain, extract_root_domain
 
 
 class TestAsyncRetry:
-
     async def test_succeeds_first_try(self) -> None:
         call_count = 0
 
@@ -25,7 +24,6 @@ class TestAsyncRetry:
         result = await always_works()
         assert result == "ok"
         assert call_count == 1
-
 
     async def test_retries_on_failure_then_succeeds(self) -> None:
         call_count = 0
@@ -42,7 +40,6 @@ class TestAsyncRetry:
         assert result == "ok"
         assert call_count == 3
 
-
     async def test_exhausts_retries_raises(self) -> None:
         @async_retry(max_retries=2, backoff=0.01)
         async def always_fails() -> str:
@@ -50,7 +47,6 @@ class TestAsyncRetry:
 
         with pytest.raises(RuntimeError, match="persistent"):
             await always_fails()
-
 
     async def test_no_retry_on_non_matching_exception(self) -> None:
         call_count = 0
@@ -64,7 +60,6 @@ class TestAsyncRetry:
         with pytest.raises(ValueError, match="not retryable"):
             await raises_value_error()
         assert call_count == 1
-
 
     async def test_backoff_delay(self) -> None:
         """Verify that retries actually wait (backoff > 0)."""
@@ -86,7 +81,6 @@ class TestAsyncRetry:
         # Actually for backoff=0.05 test purposes, any measurable delay works
         # The point is: 2nd call happens after 1st call
         assert call_times[1] > call_times[0]
-
 
     async def test_custom_retry_on(self) -> None:
         call_count = 0
