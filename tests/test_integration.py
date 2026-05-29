@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from axes.performance import AxisResult
 from report import generate_json_report, generate_markdown_report, generate_pdf_report
 from scoring import compute_osiris_score, get_grade
@@ -21,7 +23,7 @@ def _mock_axis_result(score: float, tool: str, details: dict | None = None) -> A
 
 
 class TestEndToEndWithMocks:
-    """Test le pipeline complet : scan 4 axes → scoring → report."""
+    """Test le pipeline complet : scan 6 axes OSIRVL → scoring → report."""
 
     def _make_full_results(self) -> dict[str, AxisResult]:
         return {
@@ -72,6 +74,16 @@ class TestEndToEndWithMocks:
                     "cleaner_than": 0.85,
                 },
             ),
+            "V": _mock_axis_result(
+                7.0,
+                "Sovereignty Analysis",
+                {"hosting_region": "EU", "cdn_region": "EU"},
+            ),
+            "L": _mock_axis_result(
+                7.0,
+                "Loi 25 Engine",
+                {"cookie_banner": True, "privacy_policy": True},
+            ),
         }
 
     def test_scoring_pipeline(self) -> None:
@@ -80,9 +92,8 @@ class TestEndToEndWithMocks:
         score = compute_osiris_score(results)
         grade = get_grade(score)
 
-        # O*0.2 + S*0.3 + I*0.3 + R*0.2 = 7.5*0.2 + 6*0.3 + 8*0.3 + 9*0.2
-        # = 1.5 + 1.8 + 2.4 + 1.8 = 7.5
-        assert score == 7.5
+        # Moyenne géométrique pondérée 6 axes (O7.5 S6 I8 R9 V7 L7) ≈ 7.2
+        assert score == pytest.approx(7.2, abs=0.1)
         assert grade == "Conforme"
 
     def test_json_report_generation(self, tmp_path: Path) -> None:
@@ -103,12 +114,12 @@ class TestEndToEndWithMocks:
         assert json_path.suffix == ".json"
 
         data = json.loads(json_path.read_text(encoding="utf-8"))
-        assert data["score"] == 7.5
+        assert data["score"] == pytest.approx(7.2, abs=0.1)
         assert data["grade"] == "Conforme"
         assert data["url"] == "https://example.com"
         assert "formula" in data
-        assert len(data["axes"]) == 4
-        for axis_key in ["O", "S", "I", "R"]:
+        assert len(data["axes"]) == 6
+        for axis_key in ["O", "S", "I", "R", "V", "L"]:
             assert axis_key in data["axes"]
             assert "score" in data["axes"][axis_key]
             assert "weight" in data["axes"][axis_key]
@@ -185,12 +196,15 @@ class TestEndToEndWithMocks:
         assert "### S — Security" in content
         assert "### I — Intrusion" in content
         assert "### R — Resource" in content
+        assert "### V — Sovereignty" in content
+        assert "### L — Legal" in content
 
         # Vérifier le tableau comparatif
         assert "| Axe | Score | Poids | Score pondéré | Source |" in content
 
-        # Vérifier la formule
-        assert "μ_osiris" in content
+        # Vérifier la formule (moyenne géométrique pondérée v5.0)
+        assert "**Formule**" in content
+        assert "Moyenne Géométrique Pondérée" in content
 
         # Vérifier les recommandations
         assert "Recommandation" in content
@@ -229,6 +243,8 @@ class TestEndToEndWithMocks:
             "S": _mock_axis_result(10.0, "Observatory"),
             "I": _mock_axis_result(10.0, "Blocklist"),
             "R": _mock_axis_result(10.0, "Carbon"),
+            "V": _mock_axis_result(10.0, "Sovereignty"),
+            "L": _mock_axis_result(10.0, "Loi 25"),
         }
         score = compute_osiris_score(results)
         grade = get_grade(score)
@@ -254,11 +270,14 @@ class TestEndToEndWithMocks:
             "S": _mock_axis_result(0.0, "Observatory"),
             "I": _mock_axis_result(0.0, "Blocklist"),
             "R": _mock_axis_result(0.0, "Carbon"),
+            "V": _mock_axis_result(0.0, "Sovereignty"),
+            "L": _mock_axis_result(0.0, "Loi 25"),
         }
         score = compute_osiris_score(results)
         grade = get_grade(score)
 
-        assert score == 0.0
+        # Plancher epsilon=0.1 (moyenne géométrique) → jamais 0.0 exact.
+        assert score == 0.1
         assert grade == "Critique"
 
     def test_pdf_report_generation(self, tmp_path: Path) -> None:

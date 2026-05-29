@@ -20,6 +20,11 @@ dev = [
     "radon>=6.0",
     "mypy>=1.0",
 ]
+# SOIC persistence + convergence (optionnel — importé via try/except ImportError
+# dans scanner.py et report.py). Repo partagé avec NEXOS.
+soic = [
+    "soic @ git+https://github.com/AILabManager-tech/soic.git",
+]
 
 [tool.setuptools.packages.find]
 include = ["axes", "axes.*"]

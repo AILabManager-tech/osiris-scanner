@@ -13,6 +13,9 @@ from typing import Any
 
 DEFAULT_DB_PATH: str = "osiris_history.db"
 
+# Axes OSIRVL persistés (colonnes score_<clé minuscule>).
+_AXIS_KEYS: tuple[str, ...] = ("O", "S", "I", "R", "V", "L")
+
 
 class ScanHistory:
     """Gestionnaire d'historique des scans OSIRIS via SQLite.
@@ -33,7 +36,7 @@ class ScanHistory:
         self._create_table()
 
     def _create_table(self) -> None:
-        """Crée la table de scans si elle n'existe pas."""
+        """Crée la table de scans si elle n'existe pas, puis migre les colonnes d'axes."""
         self._conn.execute("""
             CREATE TABLE IF NOT EXISTS scans (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -46,6 +49,8 @@ class ScanHistory:
                 score_s REAL,
                 score_i REAL,
                 score_r REAL,
+                score_v REAL,
+                score_l REAL,
                 mode TEXT DEFAULT 'fast',
                 details_json TEXT
             )
@@ -54,7 +59,21 @@ class ScanHistory:
             CREATE INDEX IF NOT EXISTS idx_scans_domain
             ON scans(domain, timestamp DESC)
         """)
+        self._migrate_axis_columns()
         self._conn.commit()
+
+    def _migrate_axis_columns(self) -> None:
+        """Ajoute les colonnes score_<axe> manquantes sur les bases pré-OSIRVL.
+
+        CREATE TABLE IF NOT EXISTS n'altère pas une table existante : les bases
+        créées avant l'ajout de V/L n'ont que score_o/s/i/r. On ajoute les
+        colonnes manquantes de façon idempotente.
+        """
+        existing = {row["name"] for row in self._conn.execute("PRAGMA table_info(scans)")}
+        for key in _AXIS_KEYS:
+            column = f"score_{key.lower()}"
+            if column not in existing:
+                self._conn.execute(f"ALTER TABLE scans ADD COLUMN {column} REAL")
 
     def save_scan(
         self,
@@ -73,7 +92,7 @@ class ScanHistory:
             url: URL complète scannée.
             osiris_score: Score OSIRIS composite.
             grade: Grade OSIRIS.
-            scores: Dict des scores par axe (O, S, I, R).
+            scores: Dict des scores par axe (O, S, I, R, V, L).
             mode: Mode de scan (fast/deep).
             details: Détails supplémentaires (sérialisés en JSON).
 
@@ -81,11 +100,13 @@ class ScanHistory:
             ID de l'enregistrement créé.
         """
         now = datetime.now(UTC).isoformat()
+        axis_columns = ", ".join(f"score_{k.lower()}" for k in _AXIS_KEYS)
+        axis_placeholders = ", ".join("?" for _ in _AXIS_KEYS)
         cursor = self._conn.execute(
-            """
+            f"""
             INSERT INTO scans (domain, url, timestamp, osiris_score, grade,
-                               score_o, score_s, score_i, score_r, mode, details_json)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                               {axis_columns}, mode, details_json)
+            VALUES (?, ?, ?, ?, ?, {axis_placeholders}, ?, ?)
             """,
             (
                 domain,
@@ -93,10 +114,7 @@ class ScanHistory:
                 now,
                 osiris_score,
                 grade,
-                scores.get("O"),
-                scores.get("S"),
-                scores.get("I"),
-                scores.get("R"),
+                *(scores.get(k) for k in _AXIS_KEYS),
                 mode,
                 json.dumps(details, ensure_ascii=False) if details else None,
             ),
@@ -157,7 +175,7 @@ class ScanHistory:
 
         improved = []
         regressed = []
-        for axis in ["O", "S", "I", "R"]:
+        for axis in _AXIS_KEYS:
             key = f"score_{axis.lower()}"
             curr = current.get(key)
             prev = previous.get(key)

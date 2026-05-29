@@ -113,26 +113,26 @@ class TestAxisRegistry:
 
 
 class TestDiscoverAxes:
-    def test_discover_registers_all_four(self) -> None:
-        """discover_axes() importe les 4 modules et enregistre O, S, I, R."""
+    def test_discover_registers_all_six(self) -> None:
+        """discover_axes() importe les 6 modules et enregistre O, S, I, R, V, L."""
         # Le registre global devrait déjà avoir les axes enregistrés
         # car les imports au top du fichier déclenchent les décorateurs
         discover_axes()
-        assert len(registry) >= 4
-        for key in ["O", "S", "I", "R"]:
+        assert len(registry) >= 6
+        for key in ["O", "S", "I", "R", "V", "L"]:
             assert key in registry, f"Axe {key} non enregistré"
 
     def test_discover_weights_sum_to_one(self) -> None:
-        """La somme des poids des 4 axes doit être 1.0."""
+        """La somme des poids des 6 axes OSIRVL doit être 1.0."""
         discover_axes()
         weights = registry.weights()
-        core_weight = sum(weights[k] for k in ["O", "S", "I", "R"])
-        assert abs(core_weight - 1.0) < 1e-9
+        total_weight = sum(weights[k] for k in ["O", "S", "I", "R", "V", "L"])
+        assert abs(total_weight - 1.0) < 1e-9
 
     def test_discover_axis_info_complete(self) -> None:
         """Chaque axe enregistré a toutes ses métadonnées."""
         discover_axes()
-        for key in ["O", "S", "I", "R"]:
+        for key in ["O", "S", "I", "R", "V", "L"]:
             info = registry.get(key)
             assert info is not None
             assert info.label

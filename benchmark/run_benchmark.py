@@ -21,12 +21,12 @@ from pathlib import Path
 # Remonter d'un niveau pour importer les modules OSIRIS
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from axes.intrusion import scan as scan_intrusion
+from axes import discover_axes, registry
 from axes.performance import AxisResult
-from axes.performance import scan as scan_performance
-from axes.resource import scan as scan_resource
-from axes.security import scan as scan_security
 from scoring import compute_osiris_score, get_grade
+
+# Peuple le registre 6-axes (O/S/I/R/V/L), comme scanner.py à l'import.
+discover_axes()
 
 BENCHMARK_DIR = Path(__file__).resolve().parent
 URLS_FILE = BENCHMARK_DIR / "inputs" / "urls.txt"
@@ -63,12 +63,7 @@ async def _scan_site(
     """Scanne un site et retourne les resultats."""
     print(f"\n  Scan: {url}")
     results: dict[str, AxisResult] = {}
-    axes = [
-        ("O", "Performance", scan_performance),
-        ("S", "Security", scan_security),
-        ("I", "Intrusion", scan_intrusion),
-        ("R", "Resource", scan_resource),
-    ]
+    axes = [(a.key, a.label, a.scan_fn) for a in registry.all()]
 
     for key, label, scan_fn in axes:
         try:
@@ -87,8 +82,8 @@ async def _scan_site(
         except Exception as e:
             print(f"ERREUR: {e}")
 
-    if len(results) < 4:
-        print(f"    => INCOMPLET ({len(results)}/4 axes)")
+    if len(results) < len(axes):
+        print(f"    => INCOMPLET ({len(results)}/{len(axes)} axes)")
         if not results:
             return None
 

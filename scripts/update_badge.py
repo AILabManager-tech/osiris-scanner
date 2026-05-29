@@ -10,7 +10,7 @@ from pathlib import Path
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from soic_v3.persistence import RunStore
+from soic.persistence import RunStore
 
 
 def get_badge_url(mu: float, pass_rate: float, total_gates: int) -> str:

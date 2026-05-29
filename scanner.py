@@ -1,7 +1,8 @@
 """OSIRIS Scanner — Orchestrateur principal.
 
 Score composite (0-10) mesurant la santé opérationnelle d'un site web.
-4 axes : Performance (O) + Sécurité (S) + Intrusion (I) + Ressources (R).
+6 axes OSIRVL : Performance (O) + Sécurité (S) + Intrusion (I) + Ressources (R)
++ Souveraineté (V) + Légalité Loi 25 (L).
 """
 
 from __future__ import annotations
@@ -266,10 +267,10 @@ async def _run_scan(
             console.print(f"  Régressés : {', '.join(delta['regressed_axes'])}")
     scan_history.close()
 
-    # SOIC persistence (optionnel — disponible si soic_v3 est installé)
+    # SOIC persistence (optionnel — disponible si soic est installé)
     try:
-        from soic_v3.osiris_adapter import save_osiris_scan
-        from soic_v3.persistence import RunStore
+        from soic.osiris_adapter import save_osiris_scan
+        from soic.persistence import RunStore
 
         store = RunStore()
         save_osiris_scan(url, results, osiris_score, grade, store)

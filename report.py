@@ -115,11 +115,25 @@ RECOMMENDATIONS: dict[str, dict[str, str]] = {
 }
 
 
+def _ordered_axes(keys: dict[str, Any] | list[str]) -> list[str]:
+    """Retourne les clés d'axes dans l'ordre canonique OSIRVL.
+
+    Les axes connus (O, S, I, R, V, L) viennent d'abord dans l'ordre de
+    AXIS_LABELS ; tout axe additionnel (plugin tiers) est ajouté ensuite,
+    trié. Pilote l'affichage et la sérialisation pour rester aligné sur le
+    registre 6-axes sans hardcoder la liste partout.
+    """
+    present = set(keys)
+    ordered = [k for k in AXIS_LABELS if k in present]
+    extras = sorted(k for k in present if k not in AXIS_LABELS)
+    return ordered + extras
+
+
 def _get_recommendation(axis: str, score: float) -> str:
     """Retourne la recommandation appropriée pour un axe et un score.
 
     Args:
-        axis: Clé de l'axe (O, S, I, R).
+        axis: Clé de l'axe (O, S, I, R, V, L).
         score: Score de l'axe (0-10).
 
     Returns:
@@ -159,19 +173,20 @@ def _build_report_data(
     """
     now = datetime.now(UTC).isoformat()
 
+    weights = _get_weights()
     axes_data: dict[str, Any] = {}
-    for axis_key in ["O", "S", "I", "R"]:
-        if axis_key in results:
-            r = results[axis_key]
-            axes_data[axis_key] = {
-                "label": AXIS_LABELS[axis_key],
-                "score": r.score,
-                "weight": _get_weights()[axis_key],
-                "weighted_score": round(r.score * _get_weights()[axis_key], 2),
-                "tool_used": r.tool_used,
-                "details": r.details,
-                "recommendation": _get_recommendation(axis_key, r.score),
-            }
+    for axis_key in _ordered_axes(results):
+        r = results[axis_key]
+        axis_weight = weights.get(axis_key, 0.0)
+        axes_data[axis_key] = {
+            "label": AXIS_LABELS.get(axis_key, axis_key),
+            "score": r.score,
+            "weight": axis_weight,
+            "weighted_score": round(r.score * axis_weight, 2),
+            "tool_used": r.tool_used,
+            "details": r.details,
+            "recommendation": _get_recommendation(axis_key, r.score),
+        }
 
     # Build meta section
     meta: dict[str, Any] = {
@@ -290,21 +305,20 @@ def generate_markdown_report(
     lines.append(f"**Score OSIRIS : {osiris_score}/10 ({grade})**")
     lines.append("")
 
-    # H3 — Tableau comparatif des 4 axes
+    # H3 — Tableau comparatif des axes
     lines.append("### Tableau comparatif")
     lines.append("")
     lines.append("| Axe | Score | Poids | Score pondéré | Source |")
     lines.append("|-----|------:|------:|--------------:|--------|")
-    for axis_key in ["O", "S", "I", "R"]:
-        if axis_key in report_data["axes"]:
-            a = report_data["axes"][axis_key]
-            lines.append(
-                f"| {axis_key} — {a['label']} "
-                f"| {a['score']}/10 "
-                f"| {int(a['weight'] * 100)}% "
-                f"| {a['weighted_score']} "
-                f"| {a['tool_used']} |"
-            )
+    for axis_key in report_data["axes"]:
+        a = report_data["axes"][axis_key]
+        lines.append(
+            f"| {axis_key} — {a['label']} "
+            f"| {a['score']}/10 "
+            f"| {int(a['weight'] * 100)}% "
+            f"| {a['weighted_score']} "
+            f"| {a['tool_used']} |"
+        )
     lines.append("")
 
     # H2 — Formule
@@ -313,19 +327,20 @@ def generate_markdown_report(
     lines.append(f"**Formule** : `{report_data['formula']}`")
     lines.append("")
     lines.append("Les pondérations reflètent l'importance relative de chaque axe :")
-    lines.append("- Sécurité et Intrusion (30% chacun) : priorité à la protection des utilisateurs")
-    lines.append(
-        "- Performance et Resource (20% chacun) : qualité de l'expérience et éco-responsabilité"
-    )
+    lines.append("")
+    lines.append("| Axe | Poids |")
+    lines.append("|-----|------:|")
+    weights = report_data.get("weights", {})
+    for axis_key in _ordered_axes(weights):
+        label = AXIS_LABELS.get(axis_key, axis_key)
+        lines.append(f"| {axis_key} — {label} | {int(weights[axis_key] * 100)}% |")
     lines.append("")
 
     # H2 — Détails par axe
     lines.append("## Détails par axe")
     lines.append("")
 
-    for axis_key in ["O", "S", "I", "R"]:
-        if axis_key not in report_data["axes"]:
-            continue
+    for axis_key in report_data["axes"]:
         a = report_data["axes"][axis_key]
 
         # H3 — Chaque axe
@@ -513,17 +528,16 @@ def generate_pdf_report(
     # Tableau des axes
     elements.append(Paragraph("Résultats par axe", heading_style))
     table_data = [["Axe", "Score", "Poids", "Source"]]
-    for axis_key in ["O", "S", "I", "R"]:
-        if axis_key in report_data["axes"]:
-            a = report_data["axes"][axis_key]
-            table_data.append(
-                [
-                    f"{axis_key} — {a['label']}",
-                    f"{a['score']}/10",
-                    f"{int(a['weight'] * 100)}%",
-                    a["tool_used"],
-                ]
-            )
+    for axis_key in report_data["axes"]:
+        a = report_data["axes"][axis_key]
+        table_data.append(
+            [
+                f"{axis_key} — {a['label']}",
+                f"{a['score']}/10",
+                f"{int(a['weight'] * 100)}%",
+                a["tool_used"],
+            ]
+        )
 
     table = RLTable(table_data, colWidths=[120, 60, 50, 250])
     table.setStyle(
@@ -547,18 +561,17 @@ def generate_pdf_report(
 
     # Recommandations
     elements.append(Paragraph("Recommandations", heading_style))
-    for axis_key in ["O", "S", "I", "R"]:
-        if axis_key in report_data["axes"]:
-            a = report_data["axes"][axis_key]
-            rec = a.get("recommendation", "")
-            if rec:
-                elements.append(
-                    Paragraph(
-                        f"<b>{axis_key} — {a['label']}</b> : {rec}",
-                        body_style,
-                    )
+    for axis_key in report_data["axes"]:
+        a = report_data["axes"][axis_key]
+        rec = a.get("recommendation", "")
+        if rec:
+            elements.append(
+                Paragraph(
+                    f"<b>{axis_key} — {a['label']}</b> : {rec}",
+                    body_style,
                 )
-                elements.append(Spacer(1, 2 * mm))
+            )
+            elements.append(Spacer(1, 2 * mm))
 
     elements.append(Spacer(1, 6 * mm))
 
@@ -629,9 +642,9 @@ def generate_report_with_history(
 
     # Persist and add convergence section
     try:
-        from soic_v3.converger import WebConverger
-        from soic_v3.osiris_adapter import save_osiris_scan
-        from soic_v3.persistence import RunStore
+        from soic.converger import WebConverger
+        from soic.osiris_adapter import save_osiris_scan
+        from soic.persistence import RunStore
 
         store = RunStore()
         save_osiris_scan(url, results, osiris_score, grade, store)
