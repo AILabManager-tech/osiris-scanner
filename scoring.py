@@ -1,7 +1,11 @@
-"""OSIRIS Scoring — Agrégation pondérée des 4 axes.
+"""OSIRIS Scoring — Moteur Géométrique Pondéré (GEARGRINDER).
 
-Formule publique :
-    μ_osiris = O × 0.20 + S × 0.30 + I × 0.30 + R × 0.20
+Formule v5.0 :
+    Score = Π (s_i ^ w_i)
+    où s_i est le score de l'axe i et w_i son poids (Σ w_i = 1.0).
+
+Cette méthode garantit qu'un échec critique sur un axe pilier
+fait s'effondrer le score global, empêchant le "maquillage" par le SEO.
 
 Grades :
     9.0 - 10.0 : Exemplaire
@@ -12,21 +16,41 @@ Grades :
 
 from __future__ import annotations
 
+import math
+import logging
 from axes.performance import AxisResult
 
-# --- Pondérations (PUBLIQUES) ---
+logger = logging.getLogger("osiris")
 
-WEIGHT_PERFORMANCE: float = 0.20
-WEIGHT_SECURITY: float = 0.30
-WEIGHT_INTRUSION: float = 0.30
-WEIGHT_RESOURCE: float = 0.20
+# --- Pondérations v5.0 (Total = 1.0) ---
 
-WEIGHTS: dict[str, float] = {
+WEIGHT_PERFORMANCE: float = 0.15
+WEIGHT_SECURITY: float = 0.25
+WEIGHT_INTRUSION: float = 0.20
+WEIGHT_RESOURCE: float = 0.10
+WEIGHT_SOVEREIGNTY: float = 0.15
+WEIGHT_LEGAL: float = 0.15
+
+_DEFAULT_WEIGHTS: dict[str, float] = {
     "O": WEIGHT_PERFORMANCE,
     "S": WEIGHT_SECURITY,
     "I": WEIGHT_INTRUSION,
     "R": WEIGHT_RESOURCE,
+    "V": WEIGHT_SOVEREIGNTY,
+    "L": WEIGHT_LEGAL,
 }
+
+
+def _get_weights() -> dict[str, float]:
+    """Retourne les poids depuis le registre de plugins si disponible."""
+    try:
+        from axes import registry
+        if len(registry) > 0:
+            return registry.weights()
+    except ImportError:
+        pass
+    return _DEFAULT_WEIGHTS
+
 
 # --- Seuils de grade ---
 
@@ -39,39 +63,73 @@ GRADE_THRESHOLDS: list[tuple[float, str]] = [
 
 
 def compute_osiris_score(results: dict[str, AxisResult]) -> float:
-    """Calcule le score OSIRIS composite.
+    """Calcule le score OSIRIS composite via Moyenne Géométrique Pondérée.
 
-    Formule : μ = O×0.20 + S×0.30 + I×0.30 + R×0.20
+    Formule : Score = exp( Σ (w_i * ln(s_i)) )
+    Pour éviter ln(0), on utilise un epsilon de 0.1 (score minimal technique).
 
     Args:
-        results: Dictionnaire {axe: AxisResult} avec clés O, S, I, R.
+        results: Dictionnaire {axe: AxisResult}.
 
     Returns:
         Score composite entre 0.0 et 10.0.
-
-    Raises:
-        ValueError: Si un axe requis est manquant.
     """
-    missing = set(WEIGHTS.keys()) - set(results.keys())
-    if missing:
-        raise ValueError(f"Axes manquants pour le calcul OSIRIS : {', '.join(sorted(missing))}")
+    if not results:
+        raise ValueError("Aucun axe fourni pour le calcul OSIRIS")
 
-    score = sum(
-        results[axis].score * weight
-        for axis, weight in WEIGHTS.items()
-    )
-    return round(score, 1)
+    weights = _get_weights()
+    
+    # Vérifier si tous les axes requis sont présents
+    missing = set(weights.keys()) - set(results.keys())
+    if missing:
+        logger.warning("Axes manquants pour le calcul complet : %s", missing)
+        return compute_partial_score(results)
+
+    # Calcul géométrique
+    weighted_ln_sum = 0.0
+    epsilon = 0.1  # Plancher pour éviter ln(0) et permettre l'effondrement contrôlé
+    
+    for axis, weight in weights.items():
+        score = max(epsilon, results[axis].score)
+        ln_val = math.log(score)
+        weighted_ln_sum += weight * ln_val
+        logger.debug("Axe %s: score=%.1f, poids=%.2f, ln=%.4f, weighted=%.4f", axis, score, weight, ln_val, weight * ln_val)
+
+    final_score = math.exp(weighted_ln_sum)
+    logger.debug("Score final calculé: %.4f (weighted_ln_sum=%.4f)", final_score, weighted_ln_sum)
+    return round(final_score, 1)
+
+
+def compute_partial_score(results: dict[str, AxisResult]) -> float:
+    """Calcule un score partiel (Géométrique normalisé)."""
+    if not results:
+        raise ValueError("Aucun axe fourni pour le calcul OSIRIS partiel")
+
+    weights = _get_weights()
+
+    # Normalisation des poids des axes disponibles
+    available_weight_sum = sum(weights[axis] for axis in results if axis in weights)
+    if available_weight_sum == 0:
+        return 0.0
+
+    weighted_ln_sum = 0.0
+    epsilon = 0.1
+    
+    for axis, result in results.items():
+        if axis in weights:
+            normalized_weight = weights[axis] / available_weight_sum
+            score = max(epsilon, result.score)
+            weighted_ln_sum += normalized_weight * math.log(score)
+
+    normalized_score = math.exp(weighted_ln_sum)
+
+    # Pénalité de fiabilité : (n_available / total) ^ 0.5
+    reliability = (len(results) / len(weights)) ** 0.5
+    return round(normalized_score * reliability, 1)
 
 
 def get_grade(score: float) -> str:
-    """Détermine le grade OSIRIS à partir du score.
-
-    Args:
-        score: Score OSIRIS entre 0.0 et 10.0.
-
-    Returns:
-        Grade correspondant (Exemplaire, Conforme, À risque, Critique).
-    """
+    """Détermine le grade OSIRIS à partir du score."""
     for threshold, grade in GRADE_THRESHOLDS:
         if score >= threshold:
             return grade
@@ -79,15 +137,5 @@ def get_grade(score: float) -> str:
 
 
 def get_formula_description() -> str:
-    """Retourne la description textuelle de la formule de scoring.
-
-    Returns:
-        Description de la formule pour inclusion dans les rapports.
-    """
-    return (
-        f"μ_osiris = "
-        f"Performance × {WEIGHT_PERFORMANCE} + "
-        f"Security × {WEIGHT_SECURITY} + "
-        f"Intrusion × {WEIGHT_INTRUSION} + "
-        f"Resource × {WEIGHT_RESOURCE}"
-    )
+    """Description de la formule géométrique."""
+    return "Score = Π (Axe_i ^ Poids_i) — Moyenne Géométrique Pondérée"

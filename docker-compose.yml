@@ -1,0 +1,10 @@
+services:
+  osiris:
+    build: .
+    container_name: osiris-scanner
+    volumes:
+      - ./reports:/app/reports
+      - ./blocklists:/app/blocklists
+    environment:
+      - PYTHONUNBUFFERED=1
+    # Exemple : docker compose run osiris --url https://example.com --output report

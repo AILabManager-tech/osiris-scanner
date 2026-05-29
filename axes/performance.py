@@ -14,6 +14,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from axes import register_axis
+from utils import async_retry
+
 
 @dataclass
 class AxisResult:
@@ -107,6 +110,14 @@ def _parse_lighthouse_json(json_path: Path) -> tuple[float, dict[str, Any]]:
     return score_0_100, details
 
 
+@register_axis(
+    "O",
+    label="Performance",
+    weight=0.15,
+    exc_types=(FileNotFoundError, RuntimeError, ValueError),
+    scan_label="Scan Performance (Lighthouse)...",
+)
+@async_retry(max_retries=2, backoff=2.0, retry_on=(RuntimeError,))
 async def scan(url: str) -> AxisResult:
     """Scanne la performance d'une URL via Lighthouse.
 

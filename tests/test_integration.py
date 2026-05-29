@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 
 from axes.performance import AxisResult
-from report import generate_json_report, generate_markdown_report
+from report import generate_json_report, generate_markdown_report, generate_pdf_report
 from scoring import compute_osiris_score, get_grade
 
 
@@ -226,6 +226,24 @@ class TestEndToEndWithMocks:
 
         assert score == 0.0
         assert grade == "Critique"
+
+    def test_pdf_report_generation(self, tmp_path: Path) -> None:
+        """Vérifie la génération du rapport PDF."""
+        results = self._make_full_results()
+        score = compute_osiris_score(results)
+        grade = get_grade(score)
+
+        pdf_path = generate_pdf_report(
+            "https://example.com", results, score, grade,
+            output_dir=str(tmp_path),
+        )
+
+        assert pdf_path.exists()
+        assert pdf_path.suffix == ".pdf"
+        assert pdf_path.stat().st_size > 0
+        # PDF files start with %PDF
+        content = pdf_path.read_bytes()
+        assert content[:5] == b"%PDF-"
 
     def test_report_data_consistency(self, tmp_path: Path) -> None:
         """Vérifie la cohérence entre JSON et Markdown."""

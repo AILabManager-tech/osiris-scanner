@@ -8,11 +8,17 @@ Mesure la posture sécurité d'un site web via :
 from __future__ import annotations
 
 import asyncio
+import logging
 from typing import Any
 
-import requests
+import aiohttp
 
+from axes import register_axis
 from axes.performance import AxisResult
+from cache import DEFAULT_TTLS, scan_cache
+from utils import async_retry, extract_domain
+
+logger = logging.getLogger("osiris")
 
 # --- Constantes ---
 
@@ -68,8 +74,8 @@ def _grade_to_score(grade: str) -> float:
     return GRADE_SCORES.get(grade, 0.0)
 
 
-def _fetch_observatory(host: str) -> dict[str, Any]:
-    """Appelle l'API Mozilla Observatory pour un domaine.
+async def _fetch_observatory(host: str) -> dict[str, Any]:
+    """Appelle l'API Mozilla Observatory pour un domaine (async, avec cache).
 
     Args:
         host: Domaine à scanner (sans protocole).
@@ -80,32 +86,36 @@ def _fetch_observatory(host: str) -> dict[str, Any]:
     Raises:
         RuntimeError: Si l'API retourne une erreur ou est inaccessible.
     """
+    cache_key = f"observatory:{host}"
+    cached = scan_cache.get(cache_key)
+    if cached is not None:
+        return cached
+
+    timeout = aiohttp.ClientTimeout(total=OBSERVATORY_TIMEOUT_SECONDS)
     try:
-        response = requests.post(
-            OBSERVATORY_API_URL,
-            params={"host": host},
-            timeout=OBSERVATORY_TIMEOUT_SECONDS,
-        )
-        response.raise_for_status()
-    except requests.Timeout:
+        async with aiohttp.ClientSession(timeout=timeout) as session, session.post(
+            OBSERVATORY_API_URL, params={"host": host}
+        ) as response:
+            response.raise_for_status()
+            data: dict[str, Any] = await response.json()
+    except TimeoutError:
         raise RuntimeError(
             f"Observatory API timeout après {OBSERVATORY_TIMEOUT_SECONDS}s"
         ) from None
-    except requests.RequestException as e:
+    except aiohttp.ClientError as e:
         raise RuntimeError(f"Observatory API inaccessible : {e}") from e
-
-    data: dict[str, Any] = response.json()
 
     if data.get("error"):
         raise RuntimeError(
             f"Observatory erreur pour {host} : {data.get('error')} — {data.get('message', '')}"
         )
 
+    scan_cache.set(cache_key, data, ttl=DEFAULT_TTLS["observatory"])
     return data
 
 
-def _fetch_headers(url: str) -> dict[str, str]:
-    """Récupère les headers HTTP d'une URL.
+async def _fetch_headers(url: str) -> dict[str, str]:
+    """Récupère les headers HTTP d'une URL (async).
 
     Args:
         url: URL complète à analyser.
@@ -116,72 +126,149 @@ def _fetch_headers(url: str) -> dict[str, str]:
     Raises:
         RuntimeError: Si la requête échoue.
     """
+    timeout = aiohttp.ClientTimeout(total=HEADERS_TIMEOUT_SECONDS)
+    req_headers = {"User-Agent": REQUEST_USER_AGENT}
     try:
-        req_headers = {"User-Agent": REQUEST_USER_AGENT}
-        # HEAD d'abord, fallback GET+stream si le serveur refuse HEAD
-        response = requests.head(
-            url,
-            timeout=HEADERS_TIMEOUT_SECONDS,
-            allow_redirects=True,
-            headers=req_headers,
-        )
-        if response.status_code >= 400:
-            response = requests.get(
-                url,
-                timeout=HEADERS_TIMEOUT_SECONDS,
-                allow_redirects=True,
-                stream=True,
-                headers=req_headers,
-            )
-            response.close()
-        response.raise_for_status()
-    except requests.Timeout:
+        async with (
+            aiohttp.ClientSession(timeout=timeout, headers=req_headers) as session,
+            # HEAD d'abord, fallback GET si le serveur refuse HEAD
+            session.head(url, allow_redirects=True) as response,
+        ):
+                if response.status >= 400:
+                    async with session.get(url, allow_redirects=True) as get_resp:
+                        get_resp.raise_for_status()
+                        return {k.lower(): v for k, v in get_resp.headers.items()}
+                response.raise_for_status()
+                return {k.lower(): v for k, v in response.headers.items()}
+    except TimeoutError:
         raise RuntimeError(
             f"Headers HTTP timeout après {HEADERS_TIMEOUT_SECONDS}s pour {url}"
         ) from None
-    except requests.RequestException as e:
+    except aiohttp.ClientError as e:
         raise RuntimeError(f"Impossible de récupérer les headers de {url} : {e}") from e
 
-    return {k.lower(): v for k, v in response.headers.items()}
+
+def _evaluate_hsts(value: str) -> float:
+    """Évalue la qualité du header HSTS. Retourne 0.0-1.0."""
+    value = value.lower()
+    try:
+        max_age = int(value.split("max-age=")[1].split(";")[0].strip())
+    except (IndexError, ValueError):
+        return 0.2  # Present but unparseable
+    if max_age >= 31536000:  # 1 year
+        score = 0.8
+        if "includesubdomains" in value:
+            score += 0.1
+        if "preload" in value:
+            score += 0.1
+        return score
+    if max_age >= 2592000:  # 30 days
+        return 0.5
+    return 0.3  # Too short
 
 
-def _analyze_headers(headers: dict[str, str]) -> tuple[float, dict[str, bool]]:
-    """Analyse les headers de sécurité présents.
+def _evaluate_csp(value: str) -> float:
+    """Évalue la qualité du header CSP. Retourne 0.0-1.0."""
+    value = value.lower()
+    score = 0.3  # Present = base score
+    if "default-src" in value:
+        score += 0.2
+    if "'unsafe-inline'" not in value and "'unsafe-eval'" not in value:
+        score += 0.3
+    if "script-src" in value:
+        score += 0.1
+    if "frame-ancestors" in value:
+        score += 0.1
+    return min(score, 1.0)
+
+
+def _evaluate_xfo(value: str) -> float:
+    """Évalue la qualité du header X-Frame-Options. Retourne 0.0-1.0."""
+    value = value.upper().strip()
+    if value in ("DENY", "SAMEORIGIN"):
+        return 1.0
+    return 0.3  # Present but weak (e.g., ALLOW-FROM)
+
+
+def _evaluate_xcto(value: str) -> float:
+    """Évalue le header X-Content-Type-Options. Retourne 0.0-1.0."""
+    return 1.0 if value.strip().lower() == "nosniff" else 0.3
+
+
+def _evaluate_referrer(value: str) -> float:
+    """Évalue la qualité du header Referrer-Policy. Retourne 0.0-1.0."""
+    strong = {"no-referrer", "same-origin", "strict-origin", "strict-origin-when-cross-origin"}
+    return 1.0 if value.strip().lower() in strong else 0.5
+
+
+def _evaluate_permissions(value: str) -> float:
+    """Évalue le header Permissions-Policy. Retourne 0.0-1.0."""
+    # Any non-empty policy is decent; more restrictive = better
+    restricted = value.count("=()")
+    if restricted >= 3:
+        return 1.0
+    if restricted >= 1:
+        return 0.7
+    return 0.4  # Present but permissive
+
+
+# Header evaluators mapping
+HEADER_EVALUATORS: dict[str, callable] = {
+    "strict-transport-security": _evaluate_hsts,
+    "content-security-policy": _evaluate_csp,
+    "x-frame-options": _evaluate_xfo,
+    "x-content-type-options": _evaluate_xcto,
+    "referrer-policy": _evaluate_referrer,
+    "permissions-policy": _evaluate_permissions,
+}
+
+
+def _analyze_headers(headers: dict[str, str]) -> tuple[float, dict[str, Any]]:
+    """Analyse les headers de sécurité (présence ET qualité).
 
     Args:
         headers: Dictionnaire des headers HTTP (clés en minuscules).
 
     Returns:
-        Tuple (score_headers_0_10, détail_présence).
+        Tuple (score_headers_0_10, détail_analyse).
     """
-    presence: dict[str, bool] = {}
+    analysis: dict[str, Any] = {}
     weighted_sum: float = 0.0
 
     for header_name, weight in SECURITY_HEADERS.items():
         present = header_name in headers
-        presence[header_name] = present
         if present:
-            weighted_sum += weight
+            evaluator = HEADER_EVALUATORS.get(header_name)
+            quality = evaluator(headers[header_name]) if evaluator else 1.0
+            weighted_sum += weight * quality
+            analysis[header_name] = {"present": True, "quality": round(quality, 2)}
+        else:
+            analysis[header_name] = {"present": False, "quality": 0.0}
 
     score = (weighted_sum / HEADERS_WEIGHT_TOTAL) * 10.0
-    return round(score, 1), presence
+    return round(score, 1), analysis
 
 
 def _extract_host(url: str) -> str:
-    """Extrait le domaine d'une URL.
+    """Extrait le domaine d'une URL (délègue à utils.extract_domain).
 
     Args:
         url: URL complète (ex: https://example.com/path).
 
     Returns:
-        Domaine sans protocole ni chemin.
+        Domaine sans protocole, port ni chemin.
     """
-    host = url.split("://", 1)[-1]
-    host = host.split("/", 1)[0]
-    host = host.split("?", 1)[0]
-    return host
+    return extract_domain(url)
 
 
+@register_axis(
+    "S",
+    label="Security",
+    weight=0.25,
+    exc_types=(RuntimeError,),
+    scan_label="Scan Security (Observatory + Headers)...",
+)
+@async_retry(max_retries=3, backoff=2.0, retry_on=(RuntimeError,))
 async def scan(url: str) -> AxisResult:
     """Scanne la sécurité d'une URL via Observatory + headers HTTP.
 
@@ -200,20 +287,17 @@ async def scan(url: str) -> AxisResult:
     """
     host = _extract_host(url)
 
-    loop = asyncio.get_event_loop()
-
-    # Exécuter les deux appels HTTP en parallèle via le thread pool
-    observatory_future = loop.run_in_executor(None, _fetch_observatory, host)
-    headers_future = loop.run_in_executor(None, _fetch_headers, url)
-
-    observatory_data = await observatory_future
-    raw_headers = await headers_future
+    # Exécuter les deux appels HTTP en parallèle (nativement async)
+    observatory_data, raw_headers = await asyncio.gather(
+        _fetch_observatory(host),
+        _fetch_headers(url),
+    )
 
     # Analyser les résultats
     grade = observatory_data.get("grade", "F")
     observatory_score = _grade_to_score(grade)
 
-    headers_score, headers_presence = _analyze_headers(raw_headers)
+    headers_score, headers_analysis = _analyze_headers(raw_headers)
 
     # Score composite
     final_score = round(
@@ -221,8 +305,8 @@ async def scan(url: str) -> AxisResult:
         1,
     )
 
-    headers_found = [h for h, present in headers_presence.items() if present]
-    headers_missing = [h for h, present in headers_presence.items() if not present]
+    headers_found = [h for h, info in headers_analysis.items() if info["present"]]
+    headers_missing = [h for h, info in headers_analysis.items() if not info["present"]]
 
     return AxisResult(
         score=final_score,
@@ -234,6 +318,7 @@ async def scan(url: str) -> AxisResult:
             "headers_score": headers_score,
             "headers_found": headers_found,
             "headers_missing": headers_missing,
+            "headers_quality": headers_analysis,
         },
         tool_used="Mozilla Observatory + Headers",
         raw_output={

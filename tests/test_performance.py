@@ -102,7 +102,7 @@ class TestParseLighthouseJson:
 
 
 class TestScan:
-    @pytest.mark.asyncio
+
     async def test_scan_success(self, tmp_path: Path) -> None:
         """Test scan avec un mock de subprocess Lighthouse."""
         lighthouse_json = {
@@ -141,7 +141,7 @@ class TestScan:
         assert result.tool_used == "Lighthouse"
         assert result.details["lighthouse_score"] == 92.0
 
-    @pytest.mark.asyncio
+
     async def test_scan_lighthouse_not_found(self) -> None:
         """Test scan quand Lighthouse n'est pas installé."""
         with (
@@ -150,7 +150,7 @@ class TestScan:
         ):
             await scan("https://example.com")
 
-    @pytest.mark.asyncio
+
     async def test_scan_lighthouse_failure(self, tmp_path: Path) -> None:
         """Test scan quand Lighthouse retourne une erreur."""
         mock_process = AsyncMock()
@@ -169,7 +169,7 @@ class TestScan:
             with pytest.raises(RuntimeError, match="échoué"):
                 await scan("https://example.com")
 
-    @pytest.mark.asyncio
+
     async def test_scan_timeout_clean_exit(self) -> None:
         """Test that timeout kills process cleanly without RuntimeError at exit."""
         mock_process = AsyncMock()
@@ -190,15 +190,15 @@ class TestScan:
             with pytest.raises(RuntimeError, match="timeout"):
                 await scan("https://slow-site.example.com")
 
-            # Process must have been killed and waited
-            mock_process.kill.assert_called_once()
-            mock_process.wait.assert_awaited_once()
+            # Process must have been killed and waited (once per retry attempt)
+            assert mock_process.kill.call_count >= 1
+            assert mock_process.wait.await_count >= 1
 
 
 class TestMultiRun:
     """Tests for median multi-run strategy."""
 
-    @pytest.mark.asyncio
+
     async def test_median_of_3_runs(self) -> None:
         """Median of 3 runs returns middle value."""
         results = [
@@ -214,7 +214,7 @@ class TestMultiRun:
             call_count += 1
             return r
 
-        with patch("scanner.scan_performance", side_effect=mock_scan):
+        with patch("scanner._run_single_performance", side_effect=mock_scan):
             result = await _run_performance_multi("https://example.com", runs=3)
 
         assert result.score == 8.0
@@ -222,7 +222,7 @@ class TestMultiRun:
         assert result.details["runs_succeeded"] == 3
         assert len(result.details["runs"]) == 3
 
-    @pytest.mark.asyncio
+
     async def test_partial_timeout_uses_remaining(self) -> None:
         """If 1 of 3 runs times out, uses median of remaining 2."""
         good = AxisResult(
@@ -237,14 +237,14 @@ class TestMultiRun:
                 raise RuntimeError("timeout")
             return good
 
-        with patch("scanner.scan_performance", side_effect=mock_scan):
+        with patch("scanner._run_single_performance", side_effect=mock_scan):
             result = await _run_performance_multi("https://example.com", runs=3)
 
         assert result.score == 8.0
         assert result.details["runs_succeeded"] == 2
         assert result.details["runs_failed"] == 1
 
-    @pytest.mark.asyncio
+
     async def test_all_timeout_raises(self) -> None:
         """If all runs fail, raises RuntimeError."""
 
@@ -252,7 +252,7 @@ class TestMultiRun:
             raise RuntimeError("timeout")
 
         with (
-            patch("scanner.scan_performance", side_effect=mock_scan),
+            patch("scanner._run_single_performance", side_effect=mock_scan),
             pytest.raises(RuntimeError, match="Tous les"),
         ):
             await _run_performance_multi("https://example.com", runs=3)

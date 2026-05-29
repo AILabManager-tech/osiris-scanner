@@ -7,22 +7,24 @@ Score composite (0-10) mesurant la santé opérationnelle d'un site web.
 from __future__ import annotations
 
 import asyncio
+import logging
 import re
 import statistics
+import time
 
 import click
 from rich.console import Console
 from rich.table import Table
 
-from axes.intrusion import scan as scan_intrusion
+from axes import discover_axes, registry
 from axes.performance import AxisResult
-from axes.performance import scan as scan_performance
-from axes.resource import scan as scan_resource
-from axes.security import scan as scan_security
+from history import ScanHistory
 from report import generate_json_report, generate_markdown_report
 from scoring import compute_osiris_score, get_grade
+from utils import extract_domain
 
 console = Console()
+logger = logging.getLogger("osiris")
 
 URL_PATTERN = re.compile(
     r"^https?://"
@@ -32,20 +34,21 @@ URL_PATTERN = re.compile(
     r"(?:/[^\s]*)?$"
 )
 
-# Axes definition: (key, label, scan_function, weight_display, exception_types)
-AXES = [
-    ("O", "Performance", scan_performance, "20%", (FileNotFoundError, RuntimeError, ValueError)),
-    ("S", "Security", scan_security, "30%", (RuntimeError,)),
-    ("I", "Intrusion", scan_intrusion, "30%", (FileNotFoundError, RuntimeError)),
-    ("R", "Resource", scan_resource, "20%", (RuntimeError,)),
-]
+# Découverte automatique des axes via le registre de plugins
+discover_axes()
 
-SCAN_LABELS = {
-    "O": "Scan Performance (Lighthouse)...",
-    "S": "Scan Security (Observatory + Headers)...",
-    "I": "Scan Intrusion (Blocklist Analysis)...",
-    "R": "Scan Resource (Page Weight + Carbon)...",
-}
+
+def _get_axes() -> list[tuple[str, str, object, str, tuple[type[Exception], ...]]]:
+    """Construit la liste AXES depuis le registre de plugins."""
+    return [
+        (a.key, a.label, a.scan_fn, f"{int(a.weight * 100)}%", a.exc_types)
+        for a in registry.all()
+    ]
+
+
+def _get_scan_labels() -> dict[str, str]:
+    """Construit les labels de scan depuis le registre."""
+    return {a.key: a.scan_label for a in registry.all()}
 
 
 def _validate_url(url: str) -> str:
@@ -74,7 +77,10 @@ def _display_result(axis_name: str, axis_label: str, result: AxisResult) -> None
 
 async def _run_single_performance(url: str) -> AxisResult:
     """Run a single Lighthouse scan, returning result or raising."""
-    return await scan_performance(url)
+    axis_o = registry.get("O")
+    if axis_o is None:
+        raise RuntimeError("Axe Performance (O) non enregistré dans le registre")
+    return await axis_o.scan_fn(url)
 
 
 async def _run_performance_multi(url: str, runs: int) -> AxisResult:
@@ -140,23 +146,39 @@ async def _scan_axis(
     *,
     runs: int = 1,
     mode: str = "fast",
+    scan_context: dict | None = None,
 ) -> AxisResult | None:
     """Scan a single axis, returning None on failure instead of crashing."""
-    console.print(f"[dim]{SCAN_LABELS.get(axis_key, f'Scan {axis_label}...')}[/dim]")
+    if scan_context is None:
+        scan_context = {}
+    scan_labels = _get_scan_labels()
+    console.print(f"[dim]{scan_labels.get(axis_key, f'Scan {axis_label}...')}[/dim]")
+    t0 = time.monotonic()
     try:
         if axis_key == "O":
             result = await _run_performance_multi(url, runs)
+            # Store Lighthouse raw_output for other axes (e.g., R can use totalByteWeight)
+            if result.raw_output:
+                scan_context["lighthouse_raw"] = result.raw_output
         elif axis_key == "I" and mode == "deep":
             from axes.intrusion import scan_deep as scan_intrusion_deep
             result = await scan_intrusion_deep(url)
-        elif axis_key == "R" and mode == "deep":
-            from axes.resource import scan_deep as scan_resource_deep
-            result = await scan_resource_deep(url)
+        elif axis_key == "R":
+            if mode == "deep":
+                from axes.resource import scan_deep as scan_resource_deep
+                result = await scan_resource_deep(url)
+            else:
+                from axes.resource import scan as scan_resource_fn
+                result = await scan_resource_fn(url, scan_context=scan_context)
         else:
             result = await scan_fn(url)
+        elapsed = time.monotonic() - t0
+        logger.debug("Axe %s terminé en %.1fs — score=%.1f", axis_key, elapsed, result.score)
         _display_result(axis_key, axis_label, result)
         return result
     except exc_types as e:
+        elapsed = time.monotonic() - t0
+        logger.debug("Axe %s échoué en %.1fs : %s", axis_key, elapsed, e)
         console.print(f"[red]ERREUR {axis_label}[/red] : {e}")
         return None
 
@@ -177,36 +199,35 @@ async def _run_scan(
 
     results: dict[str, AxisResult] = {}
     failed_axes: list[str] = []
+    scan_context: dict = {}
 
-    for axis_key, axis_label, scan_fn, _weight, exc_types in AXES:
-        result = await _scan_axis(
-            url, axis_key, axis_label, scan_fn, exc_types, runs=runs, mode=mode,
-        )
-        if result is not None:
+    # Lancer les axes en parallèle (asyncio.gather) — découverts via le registre
+    axes = _get_axes()
+    axis_tasks = [
+        _scan_axis(url, key, label, fn, exc, runs=runs, mode=mode, scan_context=scan_context)
+        for key, label, fn, _weight, exc in axes
+    ]
+    axis_results = await asyncio.gather(*axis_tasks, return_exceptions=True)
+
+    for (axis_key, axis_label, *_rest), result in zip(axes, axis_results, strict=True):
+        if isinstance(result, BaseException):
+            console.print(f"[red]ERREUR inattendue {axis_label}[/red] : {result}")
+            failed_axes.append(axis_key)
+        elif result is not None:
             results[axis_key] = result
         else:
             failed_axes.append(axis_key)
 
-    # Need all 4 axes for scoring
     if failed_axes:
         console.print(
             f"\n[yellow]Axes en échec : {', '.join(failed_axes)}[/yellow]"
         )
-        if len(results) < 4:
-            # Compute partial score with available axes
-            if results:
-                partial = sum(r.score for r in results.values()) / len(results)
-                partial = round(partial, 1)
-                grade = get_grade(partial)
-                console.print(
-                    f"\n[bold]Score OSIRIS partiel : {partial}/10 ({grade})[/bold]"
-                    f" — basé sur {len(results)}/4 axes\n"
-                )
-            else:
-                console.print("\n[red]Aucun axe n'a réussi. Scan avorté.[/red]\n")
+        if not results:
+            console.print("\n[red]Aucun axe n'a réussi. Scan avorté.[/red]\n")
             return
 
     osiris_score = compute_osiris_score(results)
+    is_partial = len(results) < len(axes)
     grade = get_grade(osiris_score)
 
     # Summary table
@@ -216,34 +237,43 @@ async def _run_scan(
     table.add_column("Score", justify="right")
     table.add_column("Poids", justify="right")
     table.add_column("Source")
-    for axis_key, axis_label, _fn, weight, _exc in AXES:
+    for axis_key, axis_label, _fn, weight, _exc in axes:
         if axis_key in results:
             r = results[axis_key]
             table.add_row(f"{axis_key} — {axis_label}", f"{r.score}/10", weight, r.tool_used)
     console.print(table)
 
-    console.print(f"\n[bold]Score OSIRIS : {osiris_score}/10 ({grade})[/bold]\n")
+    partial_label = f" (partiel, {len(results)}/{len(axes)} axes)" if is_partial else ""
+    console.print(f"\n[bold]Score OSIRIS : {osiris_score}/10 ({grade}){partial_label}[/bold]\n")
 
-    # SOIC persistence
+    # Persistance locale (history.py — toujours disponible)
+    domain = extract_domain(url)
+    axis_scores = {k: r.score for k, r in results.items()}
+    scan_history = ScanHistory()
+    scan_history.save_scan(domain, url, osiris_score, grade, axis_scores, mode=mode)
+
+    delta = scan_history.get_delta(domain)
+    if delta:
+        delta_val = delta["delta"]
+        delta_sign = "+" if delta_val >= 0 else ""
+        delta_color = "green" if delta_val >= 0 else "red"
+        console.print(
+            f"[{delta_color}]Delta vs précédent : "
+            f"{delta_sign}{delta_val}/10[/{delta_color}]"
+        )
+        if delta["improved_axes"]:
+            console.print(f"  Améliorés : {', '.join(delta['improved_axes'])}")
+        if delta["regressed_axes"]:
+            console.print(f"  Régressés : {', '.join(delta['regressed_axes'])}")
+    scan_history.close()
+
+    # SOIC persistence (optionnel — disponible si soic_v3 est installé)
     try:
         from soic_v3.osiris_adapter import save_osiris_scan
         from soic_v3.persistence import RunStore
 
         store = RunStore()
         save_osiris_scan(url, results, osiris_score, grade, store)
-
-        delta = store.get_delta(url)
-        if delta:
-            delta_sign = "+" if delta.delta >= 0 else ""
-            delta_color = "green" if delta.delta >= 0 else "red"
-            console.print(
-                f"[{delta_color}]Delta vs précédent : "
-                f"{delta_sign}{delta.delta}/10[/{delta_color}]"
-            )
-            if delta.improved_axes:
-                console.print(f"  Améliorés : {', '.join(delta.improved_axes)}")
-            if delta.regressed_axes:
-                console.print(f"  Régressés : {', '.join(delta.regressed_axes)}")
     except ImportError:
         pass
 
@@ -263,29 +293,41 @@ async def _run_scan(
         console.print(f"[green]Rapport JSON[/green] : {json_path}")
         console.print(f"[green]Rapport Markdown[/green] : {md_path}")
 
-    # History
+    # History display
     if history:
-        try:
-            from soic_v3.osiris_adapter import get_osiris_history
-            from soic_v3.persistence import RunStore
+        hist_db = ScanHistory()
+        hist = hist_db.get_history(domain, limit=10)
+        hist_db.close()
+        if hist:
+            console.print("\n[bold]Historique des scans[/bold]")
+            hist_table = Table(show_header=True)
+            hist_table.add_column("Score", justify="right")
+            hist_table.add_column("Grade")
+            hist_table.add_column("Date")
+            for entry in hist:
+                hist_table.add_row(
+                    f"{entry.get('osiris_score', 0):.1f}/10",
+                    entry.get("grade", "?"),
+                    entry.get("timestamp", "?")[:19],
+                )
+            console.print(hist_table)
 
-            store = RunStore()
-            hist = get_osiris_history(url, store, limit=10)
-            if hist:
-                console.print("\n[bold]Historique des scans[/bold]")
-                hist_table = Table(show_header=True)
-                hist_table.add_column("Score", justify="right")
-                hist_table.add_column("Grade")
-                hist_table.add_column("Date")
-                for entry in hist:
-                    hist_table.add_row(
-                        f"{entry.get('osiris_score', 0):.1f}/10",
-                        entry.get("grade", "?"),
-                        entry.get("timestamp", "?")[:19],
-                    )
-                console.print(hist_table)
-        except ImportError:
-            pass
+
+def _setup_logging(verbose: bool) -> None:
+    """Configure le logging OSIRIS.
+
+    Args:
+        verbose: Active le niveau DEBUG si True, WARNING sinon.
+    """
+    level = logging.DEBUG if verbose else logging.WARNING
+    handler = logging.StreamHandler()
+    handler.setFormatter(logging.Formatter(
+        "[%(levelname)s] %(name)s — %(message)s"
+    ))
+    osiris_logger = logging.getLogger("osiris")
+    osiris_logger.setLevel(level)
+    if not osiris_logger.handlers:
+        osiris_logger.addHandler(handler)
 
 
 @click.command()
@@ -299,8 +341,10 @@ async def _run_scan(
     default="fast",
     help="Mode de scan (fast=HTML, deep=Playwright)",
 )
-def main(url: str, output: str | None, history: bool, runs: int, mode: str) -> None:
+@click.option("--verbose", is_flag=True, default=False, help="Active les logs détaillés (DEBUG)")
+def main(url: str, output: str | None, history: bool, runs: int, mode: str, verbose: bool) -> None:
     """OSIRIS — Score composite de santé opérationnelle d'un site web."""
+    _setup_logging(verbose)
     validated_url = _validate_url(url)
     asyncio.run(_run_scan(validated_url, output, history=history, runs=runs, mode=mode))
 

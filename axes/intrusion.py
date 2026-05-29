@@ -11,13 +11,18 @@ Méthode : parsing HTML + analyse des ressources référencées.
 from __future__ import annotations
 
 import json
+import logging
 import re
 from pathlib import Path
 from urllib.parse import urlparse
 
-import requests
+import aiohttp
 
+from axes import register_axis
 from axes.performance import AxisResult
+from utils import async_retry, extract_root_domain
+
+logger = logging.getLogger("osiris")
 
 # --- Constantes ---
 
@@ -64,8 +69,8 @@ def _load_blocklist(blocklist_path: str | None = None) -> set[str]:
     return {d.lower().strip() for d in domains if isinstance(d, str)}
 
 
-def _fetch_page(url: str) -> str:
-    """Récupère le contenu HTML d'une page.
+async def _fetch_page(url: str) -> str:
+    """Récupère le contenu HTML d'une page (async).
 
     Args:
         url: URL de la page à récupérer.
@@ -76,22 +81,21 @@ def _fetch_page(url: str) -> str:
     Raises:
         RuntimeError: Si la requête échoue.
     """
+    timeout = aiohttp.ClientTimeout(total=PAGE_TIMEOUT_SECONDS)
     try:
-        response = requests.get(
+        async with aiohttp.ClientSession(timeout=timeout) as session, session.get(
             url,
-            timeout=PAGE_TIMEOUT_SECONDS,
             headers={"User-Agent": REQUEST_USER_AGENT},
             allow_redirects=True,
-        )
-        response.raise_for_status()
-    except requests.Timeout:
+        ) as response:
+            response.raise_for_status()
+            return await response.text()
+    except TimeoutError:
         raise RuntimeError(
             f"Page timeout après {PAGE_TIMEOUT_SECONDS}s pour {url}"
         ) from None
-    except requests.RequestException as e:
+    except aiohttp.ClientError as e:
         raise RuntimeError(f"Impossible de récupérer la page {url} : {e}") from e
-
-    return response.text
 
 
 def _extract_domains_from_html(html: str) -> set[str]:
@@ -124,7 +128,7 @@ def _extract_domains_from_html(html: str) -> set[str]:
 
 
 def _extract_host(url: str) -> str:
-    """Extrait le domaine racine d'une URL.
+    """Extrait le domaine racine d'une URL (délègue à utils.extract_root_domain).
 
     Args:
         url: URL complète.
@@ -132,12 +136,7 @@ def _extract_host(url: str) -> str:
     Returns:
         Domaine racine (ex: 'example.com' pour 'sub.example.com').
     """
-    parsed = urlparse(url)
-    hostname = (parsed.hostname or "").lower()
-    parts = hostname.split(".")
-    if len(parts) >= 2:
-        return ".".join(parts[-2:])
-    return hostname
+    return extract_root_domain(url)
 
 
 def _is_tracker(domain: str, blocklist: set[str]) -> bool:
@@ -277,6 +276,40 @@ async def scan_deep(url: str, blocklist_path: str | None = None) -> AxisResult:
     )
 
 
+async def scan_auto(url: str, blocklist_path: str | None = None) -> AxisResult:
+    """Scan automatique : tente Playwright (deep), fallback sur HTML statique.
+
+    Utilise Playwright si disponible pour capturer les requêtes réseau réelles.
+    Sinon, analyse le HTML statique (mode fast).
+
+    Args:
+        url: URL du site à scanner.
+        blocklist_path: Chemin optionnel vers la blocklist.
+
+    Returns:
+        AxisResult avec le score d'intrusion.
+    """
+    try:
+        import playwright.async_api  # noqa: F401
+        logger.debug("Playwright disponible — scan deep pour Axe I")
+        result = await scan_deep(url, blocklist_path)
+        return result
+    except ImportError:
+        logger.debug("Playwright absent — fallback sur scan HTML statique")
+        return await scan(url, blocklist_path)
+    except Exception as e:
+        logger.debug("Playwright échoué (%s) — fallback sur scan HTML statique", e)
+        return await scan(url, blocklist_path)
+
+
+@register_axis(
+    "I",
+    label="Intrusion",
+    weight=0.20,
+    exc_types=(FileNotFoundError, RuntimeError),
+    scan_label="Scan Intrusion (Blocklist Analysis)...",
+)
+@async_retry(max_retries=3, backoff=2.0, retry_on=(RuntimeError,))
 async def scan(url: str, blocklist_path: str | None = None) -> AxisResult:
     """Scanne une URL pour détecter les trackers et requêtes tierces.
 
@@ -294,15 +327,11 @@ async def scan(url: str, blocklist_path: str | None = None) -> AxisResult:
         FileNotFoundError: Si la blocklist est introuvable.
         RuntimeError: Si la page est inaccessible.
     """
-    import asyncio
-
-    loop = asyncio.get_event_loop()
-
     # Charger la blocklist
-    blocklist = await loop.run_in_executor(None, _load_blocklist, blocklist_path)
+    blocklist = _load_blocklist(blocklist_path)
 
-    # Récupérer la page
-    html = await loop.run_in_executor(None, _fetch_page, url)
+    # Récupérer la page (async)
+    html = await _fetch_page(url)
 
     # Extraire les domaines
     domains = _extract_domains_from_html(html)

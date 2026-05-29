@@ -16,13 +16,13 @@ import subprocess
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse
 
 from axes.performance import AxisResult
 from scoring import (
-    WEIGHTS,
+    _get_weights,
     get_formula_description,
 )
+from utils import extract_domain
 
 # --- Constantes ---
 
@@ -51,6 +51,8 @@ AXIS_LABELS: dict[str, str] = {
     "S": "Security",
     "I": "Intrusion",
     "R": "Resource",
+    "V": "Sovereignty",
+    "L": "Legal",
 }
 
 RECOMMENDATIONS: dict[str, dict[str, str]] = {
@@ -98,6 +100,28 @@ RECOMMENDATIONS: dict[str, dict[str, str]] = {
         ),
         "high": "Page légère et éco-responsable. Empreinte minimale.",
     },
+    "V": {
+        "low": (
+            "Sorties de territoire massives. Relocalisez vos données"
+            " au Québec/Canada et évitez la dépendance aux GAFAM."
+        ),
+        "mid": (
+            "Connexions GAFAM persistantes. Envisagez des alternatives"
+            " souveraines pour vos flux critiques."
+        ),
+        "high": "Excellente souveraineté numérique. Flux locaux et écosystème maîtrisé.",
+    },
+    "L": {
+        "low": (
+            "Non-conformité Loi 25. Trackers actifs sans consentement"
+            " ou après refus. RPP non identifié."
+        ),
+        "mid": (
+            "Conformité partielle. Vérifiez l'exhaustivité des mentions"
+            " légales et le mécanisme de refus."
+        ),
+        "high": "Respect rigoureux de la Loi 25. Consentement granulaire et transparence totale.",
+    },
 }
 
 
@@ -120,16 +144,8 @@ def _get_recommendation(axis: str, score: float) -> str:
 
 
 def _extract_domain(url: str) -> str:
-    """Extrait le domaine d'une URL.
-
-    Args:
-        url: URL complète.
-
-    Returns:
-        Domaine sans protocole.
-    """
-    parsed = urlparse(url)
-    return parsed.hostname or "unknown"
+    """Extrait le domaine d'une URL (délègue à utils.extract_domain)."""
+    return extract_domain(url)
 
 
 def _build_report_data(
@@ -160,8 +176,8 @@ def _build_report_data(
             axes_data[axis_key] = {
                 "label": AXIS_LABELS[axis_key],
                 "score": r.score,
-                "weight": WEIGHTS[axis_key],
-                "weighted_score": round(r.score * WEIGHTS[axis_key], 2),
+                "weight": _get_weights()[axis_key],
+                "weighted_score": round(r.score * _get_weights()[axis_key], 2),
                 "tool_used": r.tool_used,
                 "details": r.details,
                 "recommendation": _get_recommendation(axis_key, r.score),
@@ -187,7 +203,7 @@ def _build_report_data(
         "score": osiris_score,
         "grade": grade,
         "formula": get_formula_description(),
-        "weights": WEIGHTS,
+        "weights": _get_weights(),
         "axes": axes_data,
     }
 
@@ -410,6 +426,162 @@ def generate_markdown_report(
     filepath = out_dir / filename
 
     filepath.write_text(content, encoding="utf-8")
+
+    return filepath
+
+
+def generate_pdf_report(
+    url: str,
+    results: dict[str, AxisResult],
+    osiris_score: float,
+    grade: str,
+    output_dir: str | None = None,
+    scan_meta: dict[str, Any] | None = None,
+) -> Path:
+    """Génère un rapport PDF professionnel.
+
+    Args:
+        url: URL scannée.
+        results: Résultats par axe.
+        osiris_score: Score composite.
+        grade: Grade OSIRIS.
+        output_dir: Répertoire de sortie (défaut: reports/).
+        scan_meta: Metadata de traçabilité.
+
+    Returns:
+        Chemin du fichier PDF généré.
+    """
+    from reportlab.lib import colors
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+    from reportlab.lib.units import mm
+    from reportlab.platypus import (
+        Paragraph,
+        SimpleDocTemplate,
+        Spacer,
+        TableStyle,
+    )
+    from reportlab.platypus import (
+        Table as RLTable,
+    )
+
+    report_data = _build_report_data(url, results, osiris_score, grade, scan_meta)
+
+    out_dir = Path(output_dir or REPORTS_DIR)
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    domain = _extract_domain(url)
+    date_str = datetime.now(UTC).strftime("%Y-%m-%d")
+    filename = f"{domain}_{date_str}.pdf"
+    filepath = out_dir / filename
+
+    doc = SimpleDocTemplate(
+        str(filepath),
+        pagesize=A4,
+        leftMargin=20 * mm,
+        rightMargin=20 * mm,
+        topMargin=20 * mm,
+        bottomMargin=20 * mm,
+    )
+
+    styles = getSampleStyleSheet()
+    title_style = ParagraphStyle(
+        "OsirisTitle", parent=styles["Title"], fontSize=18, spaceAfter=12,
+    )
+    heading_style = ParagraphStyle(
+        "OsirisHeading", parent=styles["Heading2"], fontSize=14, spaceAfter=8,
+    )
+    body_style = styles["Normal"]
+
+    elements: list = []
+
+    # Title
+    elements.append(Paragraph(f"Rapport OSIRIS — {domain}", title_style))
+    elements.append(Spacer(1, 6 * mm))
+
+    # Meta
+    elements.append(Paragraph(f"<b>URL</b> : {url}", body_style))
+    elements.append(Paragraph(f"<b>Date</b> : {report_data['scan_date']}", body_style))
+    version = report_data['osiris_version']
+    elements.append(Paragraph(f"<b>Version</b> : OSIRIS {version}", body_style))
+    elements.append(Spacer(1, 4 * mm))
+
+    # Score global
+    grade_color = {
+        "Exemplaire": colors.HexColor("#2E7D32"),
+        "Conforme": colors.HexColor("#1565C0"),
+        "À risque": colors.HexColor("#F57F17"),
+        "Critique": colors.HexColor("#C62828"),
+    }.get(grade, colors.black)
+
+    elements.append(Paragraph("Score Global", heading_style))
+    elements.append(Paragraph(
+        f'<font size="16" color="{grade_color.hexval()}">'
+        f'<b>{osiris_score}/10 ({grade})</b></font>',
+        body_style,
+    ))
+    elements.append(Spacer(1, 6 * mm))
+
+    # Tableau des axes
+    elements.append(Paragraph("Résultats par axe", heading_style))
+    table_data = [["Axe", "Score", "Poids", "Source"]]
+    for axis_key in ["O", "S", "I", "R"]:
+        if axis_key in report_data["axes"]:
+            a = report_data["axes"][axis_key]
+            table_data.append([
+                f"{axis_key} — {a['label']}",
+                f"{a['score']}/10",
+                f"{int(a['weight'] * 100)}%",
+                a["tool_used"],
+            ])
+
+    table = RLTable(table_data, colWidths=[120, 60, 50, 250])
+    table.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1A237E")),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("FONTSIZE", (0, 0), (-1, 0), 10),
+        ("ALIGN", (1, 0), (2, -1), "CENTER"),
+        ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#F5F5F5")]),
+        ("FONTSIZE", (0, 1), (-1, -1), 9),
+        ("TOPPADDING", (0, 0), (-1, -1), 4),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+    ]))
+    elements.append(table)
+    elements.append(Spacer(1, 6 * mm))
+
+    # Recommandations
+    elements.append(Paragraph("Recommandations", heading_style))
+    for axis_key in ["O", "S", "I", "R"]:
+        if axis_key in report_data["axes"]:
+            a = report_data["axes"][axis_key]
+            rec = a.get("recommendation", "")
+            if rec:
+                elements.append(Paragraph(
+                    f"<b>{axis_key} — {a['label']}</b> : {rec}",
+                    body_style,
+                ))
+                elements.append(Spacer(1, 2 * mm))
+
+    elements.append(Spacer(1, 6 * mm))
+
+    # Formule
+    elements.append(Paragraph("Méthodologie", heading_style))
+    elements.append(Paragraph(
+        f"<b>Formule</b> : {report_data['formula']}",
+        body_style,
+    ))
+    elements.append(Spacer(1, 4 * mm))
+
+    # Footer
+    elements.append(Spacer(1, 10 * mm))
+    elements.append(Paragraph(
+        f"<i>Rapport généré par OSIRIS Scanner v{OSIRIS_VERSION}</i>",
+        ParagraphStyle("Footer", parent=body_style, fontSize=8, textColor=colors.grey),
+    ))
+
+    doc.build(elements)
 
     return filepath
 
