@@ -9,6 +9,7 @@ dependencies = [
     "rich>=13.0",
     "playwright>=1.40",
     "reportlab>=4.0",
+    "pyyaml>=6.0",
 ]
 
 [project.optional-dependencies]

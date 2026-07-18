@@ -1,0 +1,105 @@
+# =============================================================================
+# RULESET regulation-as-code — Loi 25 (Québec)  [DRAFT 2026-06-09]
+# =============================================================================
+# Premier ruleset du moteur de gouvernance. Le MOTEUR est agnostique à la loi :
+# il consomme (observation_site, ruleset[]) -> verdicts cités. Loi 25 = ruleset #1,
+# JAMAIS codé en dur. GDPR / EU AI Act / CCPA = d'autres fichiers, même schéma.
+#
+# ⚠ DISCIPLINE NORMATIVE (non négociable)
+#   - Le champ `source` de CHAQUE règle DOIT être rempli depuis le TEXTE OFFICIEL
+#     avant toute assertion de conformité. Les `source: TODO` ci-dessous sont des
+#     placeholders — NE PAS auto-certifier un site sur une citation non vérifiée.
+#   - Source officielle à citer : LégisQuébec, RLRQ c. P-39.1
+#     https://www.legisquebec.gouv.qc.ca/fr/document/lc/P-39.1
+#   - À remplir par l'expert (Gear) ou par lecture directe du texte, pas de mémoire LLM.
+#
+# Schéma d'un objet `RègleNormative` :
+#   id            slug stable, unique
+#   obligation    énoncé de l'obligation en clair (langage humain)
+#   source        citation légale exacte  [À VÉRIFIER]
+#   observation   méthode de vérification (mappe une capacité du scanner)
+#   verdict_logic condition qui fait pass/fail
+#   preuve        clés de preuve capturées (traçabilité)
+#   severite      bloquant | majeur | mineur
+#   poids         pénalité de score si fail (indicatif, scoring par-règle)
+# =============================================================================
+
+ruleset:
+  id: loi25
+  juridiction: QC-CA
+  loi: "Loi sur la protection des renseignements personnels dans le secteur privé (RLRQ c. P-39.1), telle que modifiée par la Loi 25"
+  version: "2026-06-09-draft"
+  source_officielle: "https://www.legisquebec.gouv.qc.ca/fr/document/lc/P-39.1"
+  statut: "DRAFT — citations légales à remplir avant usage en production"
+
+regles:
+
+  # --- Consentement / traceurs --------------------------------------------
+  - id: loi25-traceurs-pre-consentement
+    obligation: >
+      Aucun traceur/cookie non essentiel ne doit se déclencher avant l'obtention
+      d'un consentement libre et éclairé de la personne.
+    source: "TODO — P-39.1, article sur le consentement [À VÉRIFIER]"
+    observation: behavioral_pre_consent        # = état Alpha de axes/legal.py
+    verdict_logic: "fail si ≥1 domaine de la blocklist est requêté au chargement vierge (avant interaction)"
+    preuve: [trackers_pre_consent]
+    severite: bloquant
+    poids: 3
+
+  # --- Droit de refus -----------------------------------------------------
+  - id: loi25-mecanisme-de-refus
+    obligation: >
+      Un mécanisme de refus du consentement doit être offert, aussi simple que
+      le mécanisme d'acceptation.
+    source: "TODO — P-39.1, article sur les modalités de consentement [À VÉRIFIER]"
+    observation: dom_presence
+    verdict_logic: "fail si aucun bouton/lien de refus n'est détecté dans le DOM"
+    preuve: [refuse_button_found]
+    severite: bloquant
+    poids: 5
+
+  - id: loi25-respect-du-refus
+    obligation: >
+      Lorsque la personne refuse, les traceurs non essentiels ne doivent pas
+      se déclencher.
+    source: "TODO — P-39.1, article sur le retrait/refus du consentement [À VÉRIFIER]"
+    observation: behavioral_post_refus         # = état Beta de axes/legal.py (post-clic)
+    verdict_logic: "fail si ≥1 traceur blocklist est émis APRÈS le clic sur refus"
+    preuve: [trackers_after_refusal]
+    severite: bloquant
+    poids: 5
+
+  # --- Transparence (DÉCOMPOSÉ — legal.py les fusionne aujourd'hui en `gamma`) --
+  # NOTE: usine-rh a obtenu gamma=pass (10/10) alors que rpp_found=FALSE, parce que
+  # la logique actuelle est "RPP OU lien-confidentialité". Faux positif détecté à la
+  # calibration. On SÉPARE les deux obligations ci-dessous.
+  - id: loi25-designation-rpp
+    obligation: >
+      L'entreprise doit désigner un Responsable de la protection des
+      renseignements personnels et publier son titre et ses coordonnées.
+    source: "TODO — P-39.1, désignation du responsable (souvent cité art. 3.1) [À VÉRIFIER]"
+    observation: dom_presence
+    verdict_logic: "fail si aucun RPP identifiable (mailto privacy/rpp/confidentialité ou mention nominative + coordonnées)"
+    preuve: [rpp_found, rpp_evidence]
+    severite: majeur          # obligation réelle ; à confirmer si bloquant
+    poids: 2
+
+  - id: loi25-politique-confidentialite-publiee
+    obligation: >
+      Une politique de confidentialité claire doit être publiée et accessible.
+    source: "TODO — P-39.1, politiques et pratiques de gouvernance [À VÉRIFIER]"
+    observation: dom_presence
+    verdict_logic: "fail si aucun lien vers une politique de confidentialité n'est trouvé"
+    preuve: [privacy_policy_links]
+    severite: majeur
+    poids: 2
+
+# =============================================================================
+# CHANTIER (pas dans ce draft, à étendre) :
+#   - Obligations Loi 25 non encore observables par le scanner comportemental :
+#     évaluation des facteurs vie privée (ÉFVP), registre des incidents,
+#     droit à la portabilité, communication hors Québec, etc.
+#     -> certaines exigent une observation non-web ou une attestation, pas un scan.
+#   - Distinguer `non_applicable` de `fail` quand l'obligation ne se vérifie pas
+#     par observation automatique.
+# =============================================================================
