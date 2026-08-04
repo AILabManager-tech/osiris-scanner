@@ -19,3 +19,4 @@ benchmark/normalized/
 .gstack/
 docs/public-readiness-evidence/runtime/
 arbo.md
+.vercel

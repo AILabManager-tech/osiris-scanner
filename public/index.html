@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="fr-CA">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="OSIRIS Scanner — diagnostic multidimensionnel de sites web par Auxo Systems.">
+  <title>OSIRIS Scanner — Auxo Systems</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <a class="skip-link" href="#main">Aller au contenu</a>
+  <header class="site-header">
+    <a class="brand" href="/" aria-label="OSIRIS Scanner, accueil">
+      <span class="brand-mark" aria-hidden="true">O</span>
+      <span><strong>OSIRIS Scanner</strong><small>Un outil Auxo Systems</small></span>
+    </a>
+    <span class="method">Méthode OSIRIS-6A-2026.1</span>
+  </header>
+
+  <main id="main">
+    <section class="hero" aria-labelledby="hero-title">
+      <p class="eyebrow">Diagnostic multidimensionnel de sites web</p>
+      <h1 id="hero-title">Observer ce que le site expose réellement.</h1>
+      <p class="lede">Six axes techniques, des preuves traçables et des limites explicites. Aucun résultat inventé.</p>
+    </section>
+
+    <section class="scan-panel" aria-labelledby="scan-title">
+      <div class="panel-heading">
+        <p class="step">01</p>
+        <div><h2 id="scan-title">Lancer un diagnostic</h2><p>HTTP et HTTPS publics seulement.</p></div>
+      </div>
+      <form id="scan-form">
+        <label for="scan-url">URL du site</label>
+        <div class="url-row">
+          <input id="scan-url" name="url" type="url" inputmode="url" autocomplete="url" required
+                 placeholder="https://exemple.ca" aria-describedby="url-help">
+          <button id="submit-button" type="submit">Démarrer le scan</button>
+        </div>
+        <p id="url-help" class="field-help">Les réseaux privés, localhost, métadonnées cloud et redirections interdites sont bloqués.</p>
+
+        <input type="hidden" name="mode" value="fast">
+        <p class="field-help"><strong>Diagnostic public :</strong> signaux HTTP et HTML sur les six axes.</p>
+
+        <label for="profile">Profil de lecture</label>
+        <select id="profile" name="profile">
+          <option value="general">Diagnostic multidimensionnel</option>
+          <option value="loi25">Diagnostic technique Loi 25</option>
+        </select>
+        <p class="legal-note">Prédiagnostic technique automatisé. Ne constitue pas une certification de conformité ni un avis juridique.</p>
+      </form>
+    </section>
+
+    <section id="progress-section" class="progress-section" hidden aria-labelledby="progress-title">
+      <div class="panel-heading"><p class="step">02</p><div><h2 id="progress-title">Analyse en cours</h2><p id="progress-message" aria-live="polite">Validation de la cible</p></div></div>
+      <div class="progress-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-labelledby="progress-title">
+        <span id="progress-bar"></span>
+      </div>
+      <ol class="progress-steps" aria-label="Étapes du diagnostic">
+        <li data-stage="validation">Cible</li><li data-stage="axes">Six axes</li><li data-stage="complete">Rapports</li>
+      </ol>
+    </section>
+
+    <section id="error-section" class="error-section" hidden tabindex="-1" aria-labelledby="error-title">
+      <p class="step">Erreur technique</p><h2 id="error-title">Le diagnostic n’a pas abouti.</h2>
+      <p id="error-message"></p><button id="error-retry" type="button" class="secondary-button">Corriger l’URL et relancer</button>
+    </section>
+
+    <article id="results" hidden tabindex="-1" aria-labelledby="results-title">
+      <header class="results-header">
+        <p class="eyebrow">Résultat factuel</p><h2 id="results-title">Résumé du scan</h2><p id="result-context"></p>
+      </header>
+      <section aria-labelledby="reliability-title"><h3 id="reliability-title">Fiabilité et couverture</h3><div id="reliability" class="reliability"></div></section>
+      <section class="score-section" aria-labelledby="global-score-title"><div><h3 id="global-score-title">Score global</h3><p>Score publié avec facteur de fiabilité.</p></div><div id="global-score" class="global-score"></div></section>
+      <section aria-labelledby="axes-title"><h3 id="axes-title">Scores par axe</h3><div id="axis-scores" class="axis-list"></div></section>
+      <section aria-labelledby="priority-title"><h3 id="priority-title">Problèmes prioritaires</h3><ul id="priority-issues" class="issue-list"></ul></section>
+      <section aria-labelledby="observations-title"><h3 id="observations-title">Observations techniques</h3><div id="observations" class="detail-list"></div></section>
+      <section aria-labelledby="evidence-title"><h3 id="evidence-title">Preuves</h3><div id="evidence" class="detail-list"></div></section>
+      <section aria-labelledby="recommendations-title"><h3 id="recommendations-title">Recommandations</h3><ul id="recommendations" class="recommendation-list"></ul></section>
+      <section aria-labelledby="limits-title"><h3 id="limits-title">Limites</h3><ul id="limits" class="limit-list"></ul></section>
+      <section class="downloads" aria-labelledby="downloads-title"><div><h3 id="downloads-title">Résultat immédiat</h3><p>Les observations et recommandations sont affichées directement ci-dessus.</p></div><div id="download-links"></div></section>
+      <button id="restart" type="button" class="secondary-button">Relancer une analyse</button>
+    </article>
+  </main>
+
+  <footer><p>OSIRIS Scanner · Auxo Systems</p><p>Automated technical pre-assessment. It does not constitute compliance certification or legal advice.</p></footer>
+  <script src="/app.js" defer></script>
+</body>
+</html>
