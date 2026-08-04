@@ -1,3 +1,7 @@
+> **Archive historique — non applicable à la version actuelle.** Ce document décrit OSIRIS 0.1.0
+> à quatre axes et contient des résultats, outils et conclusions désormais obsolètes. La référence
+> actuelle est `AUDIT_PUBLIC_READINESS_FINAL.md` avec la méthodologie `OSIRIS-6A-2026.1`.
+
 # Audit Complet — OSIRIS Scanner
 
 **Date** : 2026-02-17

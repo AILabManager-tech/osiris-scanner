@@ -1,0 +1,426 @@
+{
+  "schema_version": "1.0.0",
+  "osiris_version": "0.3.0",
+  "methodology_version": "OSIRIS-6A-2026.1",
+  "scan_date": "2026-08-04T07:41:40.044460+00:00",
+  "url": "https://example.com/",
+  "domain": "example.com",
+  "meta": {
+    "timestamp": "2026-08-04T07:41:40.044460+00:00",
+    "git_commit": null,
+    "mode": "deep",
+    "runs": 1,
+    "status": "partial",
+    "duration_seconds": 0.857,
+    "timeouts": 0,
+    "failed_axes": {
+      "O": "Repli après erreur approfondie : BrowserType.launch: Executable doesn't exist at /tmp/osiris-browser-intentionally-unavailable/chromium_headless_shell-1234/chrome-headless-shell-linux64/chrome-headless-shell",
+      "I": "Repli après erreur approfondie : BrowserType.launch: Executable doesn't exist at /tmp/osiris-browser-intentionally-unavailable/chromium_headless_shell-1234/chrome-headless-shell-linux64/chrome-headless-shell",
+      "R": "Repli après erreur approfondie : BrowserType.launch: Executable doesn't exist at /tmp/osiris-browser-intentionally-unavailable/chromium_headless_shell-1234/chrome-headless-shell-linux64/chrome-headless-shell",
+      "V": "Repli après erreur approfondie : BrowserType.launch: Executable doesn't exist at /tmp/osiris-browser-intentionally-unavailable/chromium_headless_shell-1234/chrome-headless-shell-linux64/chrome-headless-shell",
+      "L": "Repli après erreur approfondie : BrowserType.launch: Executable doesn't exist at /tmp/osiris-browser-intentionally-unavailable/chromium_headless_shell-1234/chrome-headless-shell-linux64/chrome-headless-shell"
+    },
+    "coverage": 0.685,
+    "reliability_factor": 0.921,
+    "technical_score": 6.7
+  },
+  "summary": {
+    "status": "partial",
+    "score": 6.2,
+    "technical_score": 6.7,
+    "grade": "Risque élevé",
+    "coverage": 0.685,
+    "reliability_factor": 0.921,
+    "evaluated_axes": 6,
+    "total_axes": 6
+  },
+  "score": 6.2,
+  "grade": "Risque élevé",
+  "formula": "Score technique = Σ(axe × poids); score publié = score technique × (0,75 + 0,25 × couverture)",
+  "weights": {
+    "O": 0.15,
+    "S": 0.25,
+    "I": 0.2,
+    "R": 0.1,
+    "V": 0.15,
+    "L": 0.15
+  },
+  "axes": {
+    "O": {
+      "key": "O",
+      "label": "Performance",
+      "score": 10.0,
+      "weight": 0.15,
+      "status": "donnée insuffisante",
+      "coverage": 0.6,
+      "tool_used": "Protected HTTP Timing",
+      "observations": [
+        "Réponse principale reçue en 86 ms."
+      ],
+      "evidence": [
+        {
+          "type": "http_timing",
+          "elapsed_ms": 86.3,
+          "status": 200,
+          "transfer_bytes": 559,
+          "redirects": []
+        }
+      ],
+      "risks": [],
+      "recommendations": [
+        "Maintenir les contrôles observés et revalider après chaque changement majeur."
+      ],
+      "limitations": [
+        "Mode rapide : le temps HTTP ne mesure ni le rendu JavaScript ni les Core Web Vitals.",
+        "Lighthouse historique est désactivé sur les cibles non fiables pour éviter le SSRF par sous-ressource.",
+        "Mesure approfondie indisponible; repli HTTP sécurisé : BrowserType.launch: Executable doesn't exist at /tmp/osiris-browser-intentionally-unavailable/chromium_headless_shell-1234/chrome-headless-shell-linux64/chrome-headless-shell"
+      ],
+      "details": {
+        "mode": "fast",
+        "response_time_ms": 86.3,
+        "status_code": 200,
+        "transfer_bytes": 559,
+        "redirects": [],
+        "runs_requested": 1,
+        "runs_succeeded": 1,
+        "runs_failed": 0,
+        "run_scores": [
+          10.0
+        ],
+        "aggregate": "single",
+        "degraded_from": "BrowserType.launch: Executable doesn't exist at /tmp/osiris-browser-intentionally-unavailable/chromium_headless_shell-1234/chrome-headless-shell-linux64/chrome-headless-shell"
+      }
+    },
+    "S": {
+      "key": "S",
+      "label": "Sécurité",
+      "score": 1.0,
+      "weight": 0.25,
+      "status": "risque élevé",
+      "coverage": 0.95,
+      "tool_used": "Mozilla Observatory + Headers",
+      "observations": [
+        "0/6 en-têtes de sécurité observés.",
+        "Mozilla Observatory a retourné le grade technique F."
+      ],
+      "evidence": [
+        {
+          "type": "security_header",
+          "name": "strict-transport-security",
+          "present": false,
+          "quality": 0.0
+        },
+        {
+          "type": "security_header",
+          "name": "content-security-policy",
+          "present": false,
+          "quality": 0.0
+        },
+        {
+          "type": "security_header",
+          "name": "x-frame-options",
+          "present": false,
+          "quality": 0.0
+        },
+        {
+          "type": "security_header",
+          "name": "x-content-type-options",
+          "present": false,
+          "quality": 0.0
+        },
+        {
+          "type": "security_header",
+          "name": "referrer-policy",
+          "present": false,
+          "quality": 0.0
+        },
+        {
+          "type": "security_header",
+          "name": "permissions-policy",
+          "present": false,
+          "quality": 0.0
+        }
+      ],
+      "risks": [
+        "En-têtes absents ou non observés : strict-transport-security, content-security-policy, x-frame-options, x-content-type-options, referrer-policy, permissions-policy."
+      ],
+      "recommendations": [
+        "Configurer et vérifier les en-têtes manquants selon le contexte de l'application."
+      ],
+      "limitations": [],
+      "details": {
+        "observatory_grade": "F",
+        "observatory_score_raw": 10,
+        "observatory_tests_passed": 5,
+        "observatory_tests_failed": 5,
+        "headers_score": 0.0,
+        "headers_found": [],
+        "headers_missing": [
+          "strict-transport-security",
+          "content-security-policy",
+          "x-frame-options",
+          "x-content-type-options",
+          "referrer-policy",
+          "permissions-policy"
+        ],
+        "headers_quality": {
+          "strict-transport-security": {
+            "present": false,
+            "quality": 0.0
+          },
+          "content-security-policy": {
+            "present": false,
+            "quality": 0.0
+          },
+          "x-frame-options": {
+            "present": false,
+            "quality": 0.0
+          },
+          "x-content-type-options": {
+            "present": false,
+            "quality": 0.0
+          },
+          "referrer-policy": {
+            "present": false,
+            "quality": 0.0
+          },
+          "permissions-policy": {
+            "present": false,
+            "quality": 0.0
+          }
+        }
+      }
+    },
+    "I": {
+      "key": "I",
+      "label": "Intrusion",
+      "score": 10.0,
+      "weight": 0.2,
+      "status": "donnée insuffisante",
+      "coverage": 0.65,
+      "tool_used": "OSIRIS Blocklist Analysis",
+      "observations": [
+        "0 domaine(s) de traçage connu(s) dans le HTML statique."
+      ],
+      "evidence": [],
+      "risks": [],
+      "recommendations": [
+        "Maintenir les contrôles observés et revalider après chaque changement majeur."
+      ],
+      "limitations": [
+        "Mode rapide : les traceurs injectés après exécution JavaScript ne sont pas observés.",
+        "La blocklist n'est pas exhaustive et peut produire des omissions.",
+        "Repli statique après échec Playwright : BrowserType.launch: Executable doesn't exist at /tmp/osiris-browser-intentionally-unavailable/chromium_headless_shell-1234/chrome-headless-shell-linux64/chrome-headless-shell"
+      ],
+      "details": {
+        "mode": "fast",
+        "trackers_found": 0,
+        "tracker_domains": [],
+        "third_party_domains": [
+          "iana.org"
+        ],
+        "first_party_domains": [],
+        "total_domains": 1,
+        "first_party_ratio": 0.0,
+        "degraded_from": "BrowserType.launch: Executable doesn't exist at /tmp/osiris-browser-intentionally-unavailable/chromium_headless_shell-1234/chrome-headless-shell-linux64/chrome-headless-shell"
+      }
+    },
+    "R": {
+      "key": "R",
+      "label": "Ressources",
+      "score": 10.0,
+      "weight": 0.1,
+      "status": "donnée insuffisante",
+      "coverage": 0.55,
+      "tool_used": "Page Weight + Website Carbon API",
+      "observations": [
+        "1 ressource(s) référencée(s); 0.5 KiB mesurés."
+      ],
+      "evidence": [
+        {
+          "type": "resource_weight",
+          "bytes": 559,
+          "referenced_resources": 1,
+          "estimated_gco2": 0.0001,
+          "source": "HTML principal"
+        }
+      ],
+      "risks": [],
+      "recommendations": [
+        "Maintenir les contrôles observés et revalider après chaque changement majeur."
+      ],
+      "limitations": [
+        "Mode rapide : le poids du HTML ne couvre pas toutes les sous-ressources.",
+        "Repli HTML après échec Playwright : BrowserType.launch: Executable doesn't exist at /tmp/osiris-browser-intentionally-unavailable/chromium_headless_shell-1234/chrome-headless-shell-linux64/chrome-headless-shell"
+      ],
+      "details": {
+        "mode": "fast",
+        "page_weight_bytes": 559,
+        "page_weight_kb": 0.5,
+        "weight_source": "HTML principal",
+        "resource_count": 1,
+        "gco2": 0.0001,
+        "green_hosting": true,
+        "carbon_source": "Website Carbon API",
+        "carbon_rating": "A+",
+        "cleaner_than": 1,
+        "degraded_from": "BrowserType.launch: Executable doesn't exist at /tmp/osiris-browser-intentionally-unavailable/chromium_headless_shell-1234/chrome-headless-shell-linux64/chrome-headless-shell"
+      }
+    },
+    "V": {
+      "key": "V",
+      "label": "Souveraineté",
+      "score": 8.0,
+      "weight": 0.15,
+      "status": "donnée insuffisante",
+      "coverage": 0.6,
+      "tool_used": "DNS + HTML Static Flow Mapping",
+      "observations": [
+        "2 destination(s) réseau observée(s)."
+      ],
+      "evidence": [
+        {
+          "type": "network_destination",
+          "host": "example.com",
+          "ip": "172.66.147.243",
+          "country": "US",
+          "asn": 13335,
+          "organization": "Cloudflare, Inc."
+        },
+        {
+          "type": "network_destination",
+          "host": "iana.org",
+          "ip": "192.0.43.8",
+          "country": "US",
+          "asn": 16876,
+          "organization": "ICANN"
+        }
+      ],
+      "risks": [
+        "2 destination(s) apparente(s) hors Canada."
+      ],
+      "recommendations": [
+        "Vérifier les finalités, contrats et régions de traitement des services externes."
+      ],
+      "limitations": [
+        "La géolocalisation IP est indicative et ne prouve pas le lieu juridique de traitement.",
+        "Mode rapide : seuls les hôtes visibles dans le HTML statique sont cartographiés.",
+        "Repli DNS/HTML après échec Playwright : BrowserType.launch: Executable doesn't exist at /tmp/osiris-browser-intentionally-unavailable/chromium_headless_shell-1234/chrome-headless-shell-linux64/chrome-headless-shell"
+      ],
+      "details": {
+        "total_destinations_ip": 2,
+        "geolocated_destinations": 2,
+        "gafam_connections": 0,
+        "outside_territory_connections": 2,
+        "flows": [
+          {
+            "url": "https://example.com/",
+            "ip": "172.66.147.243",
+            "host": "example.com",
+            "country": "US",
+            "asn": 13335,
+            "org": "Cloudflare, Inc.",
+            "is_gafam": false,
+            "is_outside": true
+          },
+          {
+            "url": "https://iana.org/",
+            "ip": "192.0.43.8",
+            "host": "iana.org",
+            "country": "US",
+            "asn": 16876,
+            "org": "ICANN",
+            "is_gafam": false,
+            "is_outside": true
+          }
+        ],
+        "summary": {
+          "gafam_orgs": [],
+          "outside_countries": [
+            "US"
+          ]
+        },
+        "degraded_from": "BrowserType.launch: Executable doesn't exist at /tmp/osiris-browser-intentionally-unavailable/chromium_headless_shell-1234/chrome-headless-shell-linux64/chrome-headless-shell"
+      }
+    },
+    "L": {
+      "key": "L",
+      "label": "Signaux vie privée",
+      "score": 5.0,
+      "weight": 0.15,
+      "status": "donnée insuffisante",
+      "coverage": 0.55,
+      "tool_used": "OSIRIS Technical Privacy Signals (HTML)",
+      "observations": [
+        "0 domaine(s) de traçage connu(s) dans le HTML statique.",
+        "0 lien(s) de confidentialité visible(s)."
+      ],
+      "evidence": [],
+      "risks": [
+        "Aucun lien de politique de confidentialité n'a été observé dans le HTML."
+      ],
+      "recommendations": [
+        "Rendre la politique de confidentialité clairement accessible.",
+        "Rendre le contrôle de consentement observable et accessible au clavier."
+      ],
+      "limitations": [
+        "Mode rapide : aucun clic de refus ni chargement JavaScript n'est évalué.",
+        "Les signaux observés ne permettent pas de conclure à une conformité juridique.",
+        "Repli HTML après échec Playwright : BrowserType.launch: Executable doesn't exist at /tmp/osiris-browser-intentionally-unavailable/chromium_headless_shell-1234/chrome-headless-shell-linux64/chrome-headless-shell"
+      ],
+      "details": {
+        "mode": "fast",
+        "indicators": {
+          "trackers_in_static_markup": true,
+          "privacy_link_visible": false,
+          "consent_control_visible": false
+        },
+        "tracker_domains": [],
+        "privacy_links": [],
+        "refusal_behavior_evaluated": false,
+        "degraded_from": "BrowserType.launch: Executable doesn't exist at /tmp/osiris-browser-intentionally-unavailable/chromium_headless_shell-1234/chrome-headless-shell-linux64/chrome-headless-shell"
+      }
+    }
+  },
+  "priority_issues": [
+    {
+      "axis": "S",
+      "label": "Sécurité",
+      "risk": "En-têtes absents ou non observés : strict-transport-security, content-security-policy, x-frame-options, x-content-type-options, referrer-policy, permissions-policy."
+    },
+    {
+      "axis": "V",
+      "label": "Souveraineté",
+      "risk": "2 destination(s) apparente(s) hors Canada."
+    },
+    {
+      "axis": "L",
+      "label": "Signaux vie privée",
+      "risk": "Aucun lien de politique de confidentialité n'a été observé dans le HTML."
+    }
+  ],
+  "limitations": [
+    "Scan partiel : au moins un axe a rencontré une erreur technique.",
+    "Les mesures dépendent du réseau, du rendu observé et de services externes.",
+    "Une absence de preuve n'est ni une réussite ni la preuve d'une absence de risque.",
+    "Prédiagnostic technique automatisé. Ne constitue pas une certification de conformité ni un avis juridique.",
+    "Automated technical pre-assessment. It does not constitute compliance certification or legal advice."
+  ],
+  "legal_disclaimer": {
+    "fr": "Prédiagnostic technique automatisé. Ne constitue pas une certification de conformité ni un avis juridique.",
+    "en": "Automated technical pre-assessment. It does not constitute compliance certification or legal advice."
+  },
+  "profiles": {
+    "diagnostic_technique_loi_25": {
+      "label": "Diagnostic technique Loi 25",
+      "highlighted_axes": [
+        "S",
+        "I",
+        "V",
+        "L"
+      ],
+      "scope": "Lecture ciblée des traceurs, du consentement observable, des services externes, de la souveraineté apparente et des mentions visibles.",
+      "disclaimer": "Prédiagnostic technique automatisé. Ne constitue pas une certification de conformité ni un avis juridique."
+    }
+  }
+}

@@ -2,6 +2,7 @@ __pycache__/
 *.pyc
 *.pyo
 .venv/
+.venv*/
 *.egg-info/
 dist/
 build/
@@ -15,3 +16,6 @@ benchmark/summary/
 benchmark/normalized/
 *.env
 .env.*
+.gstack/
+docs/public-readiness-evidence/runtime/
+arbo.md

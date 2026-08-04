@@ -1,271 +1,202 @@
 # OSIRIS Scanner
 
-Score composite (0-10) mesurant la **sante operationnelle** d'un site web.
+Diagnostic multidimensionnel de sites web. Un outil Auxo Systems.
 
-OSIRIS agregre les resultats d'outils tiers sur 4 axes :
-**Performance (O)** + **Securite (S)** + **Intrusion (I)** + **Ressources (R)**.
+OSIRIS observe une URL publique sur six axes, conserve les preuves disponibles et distingue
+un résultat faible d’une mesure absente ou d’une erreur technique. Il fournit un CLI, une
+interface web légère et des rapports JSON, Markdown et PDF issus du même modèle de données.
 
-> **Avertissement** : OSIRIS est un outil d'observation automatisee, pas un pentest ni
-> une certification de conformite. Les scores sont indicatifs et sujets a variance
-> (cf. [Limitations](#limitations)).
+> Prédiagnostic technique automatisé. Ne constitue pas une certification de conformité ni un
+> avis juridique.
+>
+> Automated technical pre-assessment. It does not constitute compliance certification or
+> legal advice.
+
+## Axes canoniques
+
+| Clé | Axe | Poids | Mode rapide | Mode approfondi |
+|---|---|---:|---|---|
+| O | Performance | 15 % | temps de réponse HTTP protégé | navigation et rendu Playwright |
+| S | Sécurité | 25 % | en-têtes HTTP + Mozilla Observatory | identique |
+| I | Intrusion | 20 % | domaines et traceurs visibles dans le HTML | requêtes réseau Playwright |
+| R | Ressources | 10 % | poids du HTML + estimation carbone | octets réellement transférés |
+| V | Souveraineté | 15 % | DNS et domaines visibles | destinations réseau, IP, ASN et pays apparents |
+| L | Signaux vie privée | 15 % | traceurs, lien de confidentialité, contrôle visible | comportement avant/après refus observable |
+
+Il n’existe actuellement aucun axe Accessibilité ou SEO dans le produit livré. Si ces axes sont
+ajoutés plus tard, ils resteront expérimentaux et hors score tant que la méthodologie, les rapports
+et les tests ne les intègrent pas explicitement.
 
 ## Installation
 
-### Prerequis
+Prérequis : Python 3.11 ou 3.12.
 
-- Python 3.11+
-- Node.js 18+ (pour Lighthouse CLI)
-- Google Chrome / Chromium
-
-### Setup
+Installation normale :
 
 ```bash
-# Cloner et installer
-cd osiris-scanner
-python -m venv .venv && source .venv/bin/activate
-pip install -e ".[dev]"
-
-# Installer Lighthouse CLI
-npm install -g lighthouse
-
-# (Optionnel) Mode deep — installer les navigateurs Playwright
-playwright install chromium
+python -m venv .venv
+source .venv/bin/activate
+python -m pip install .
+osiris --help
 ```
 
-## Usage
-
-### Scan basique (mode fast)
+Développement en mode editable :
 
 ```bash
-python scanner.py --url https://example.com
+python -m venv .venv
+source .venv/bin/activate
+python -m pip install -e ".[dev]"
 ```
 
-### Scan avec rapport JSON + Markdown
+Le mode approfondi requiert aussi Chromium :
 
 ```bash
-python scanner.py --url https://example.com --output report
+python -m pip install -e ".[deep]"
+python -m playwright install chromium
 ```
 
-Genere :
-- `reports/<domain>_<date>.json` — Rapport JSON structure
-- `reports/<domain>_<date>.md` — Rapport Markdown lisible
+Sans navigateur disponible, OSIRIS se replie sur les mesures rapides, marque le scan `partial`,
+réduit la couverture et explique la dégradation. Il n’invente pas de résultat approfondi.
 
-### Multi-run Lighthouse (stabilisation variance)
+## CLI
 
 ```bash
-python scanner.py --url https://example.com --runs 3
+# Scan rapide
+osiris --url https://example.com
+
+# Scan approfondi et trois formats de rapport
+osiris --url https://example.com --mode deep --output report
+
+# Médiane de trois mesures de performance HTTP
+osiris --url https://example.com --runs 3
+
+# Historique SQLite local explicite
+osiris --url https://example.com --history
 ```
 
-Execute Lighthouse N fois et retourne la **mediane**. Tolere les timeouts partiels :
-si 1 run sur 3 echoue, la mediane est calculee sur les 2 restants.
+`--output report` produit un JSON, un Markdown et un PDF dans `reports/` ou dans le répertoire
+fourni à `--output-dir`. L’historique est désactivé par défaut et ne dépend plus du composant SOIC
+privé retiré du dépôt.
 
-### Mode deep (Playwright headless)
+## Interface publique
 
 ```bash
-python scanner.py --url https://example.com --mode deep
+osiris-web
+# ouvre le premier port libre entre 25000 et 25099
 ```
 
-En mode deep, les axes Intrusion et Resource utilisent Playwright au lieu du HTML statique :
+L’interface permet de choisir le mode rapide ou approfondi, de suivre les étapes, de consulter la
+couverture, les six scores, les observations, les preuves, les risques, les recommandations et les
+limites, puis de télécharger les trois rapports. Elle n’utilise ni compte, ni cookie, ni analytics,
+ni stockage de renseignements personnels. Les jobs et rapports temporaires expirent avec le
+processus; aucun faux historique utilisateur n’est présenté.
 
-| Axe | Mode fast | Mode deep |
-|-----|-----------|-----------|
-| I — Intrusion | Parse HTML pour trouver les domaines dans `<script>`, `<img>`, `<link>` | Capture toutes les **network requests reelles** (inclut trackers JS dynamiques) |
-| R — Resource | Mesure le poids du HTML principal | Somme le **poids total transfere** (tous assets : JS, CSS, images, fonts) |
-| O — Performance | Lighthouse CLI (identique) | Lighthouse CLI (identique) |
-| S — Security | Observatory + Headers (identique) | Observatory + Headers (identique) |
+Le profil **Diagnostic technique Loi 25** met en évidence S, I, V et L. Il s’agit d’une lecture
+ciblée de signaux techniques — traceurs, consentement observable, services externes, souveraineté
+apparente et mentions visibles — et non d’une conclusion juridique.
 
-### Combinaison des options
+## Docker
 
 ```bash
-# Deep mode + 3 runs Lighthouse + rapport + historique
-python scanner.py --url https://example.com --mode deep --runs 3 --output report --history
+docker compose config
+docker compose up --build
+# http://127.0.0.1:25000
 ```
 
-### Historique des scans
+L’image installe Chromium, démarre l’interface comme utilisateur non-root et fournit `/health`.
+Pour utiliser uniquement le CLI dans l’image :
 
 ```bash
-python scanner.py --url https://example.com --history
+docker run --rm --entrypoint osiris osiris-scanner-osiris-web \
+  --url https://example.com --output report
 ```
 
-Affiche les scans precedents du meme domaine (necessite le module `soic_v3`).
+## Scoring et fiabilité
 
-### Calibration multi-sites
+Méthodologie : `OSIRIS-6A-2026.1`.
+
+```text
+score technique = Σ(score axe × poids axe)
+couverture = Σ(couverture axe × poids axe)
+facteur de fiabilité = 0,75 + 0,25 × couverture
+score publié = score technique × facteur de fiabilité
+```
+
+Lorsqu’un axe manque, le score technique est normalisé sur les axes réellement produits, puis le
+facteur de fiabilité applique une pénalité explicite. Une erreur d’outil n’est jamais convertie en
+mauvais score. Les statuts publics sont : `bon`, `à surveiller`, `risque élevé`, `non évalué`,
+`donnée insuffisante` et `erreur technique`.
+
+La méthodologie détaillée est dans [docs/METHODOLOGY.md](docs/METHODOLOGY.md).
+
+## Sécurité des URL
+
+La politique réseau est fermée par défaut :
+
+- HTTP et HTTPS seulement;
+- ports publics 80 et 443 seulement;
+- refus des identifiants intégrés, localhost, loopback, réseaux privés, link-local, réservés et
+  métadonnées cloud;
+- résolution DNS contrôlée au départ et à la connexion;
+- revalidation de chaque redirection et sous-ressource Playwright;
+- aucune autorisation DNS mise en cache, pour limiter le rebinding;
+- maximum de cinq redirections, 30 secondes par requête, 180 secondes globales et 5 MiB par
+  réponse;
+- aucun accès implicite au système de fichiers local.
+
+Voir [docs/SECURITY.md](docs/SECURITY.md) pour le modèle de menace et les limites.
+
+## Données et services externes
+
+| Source | Donnée envoyée | Repli |
+|---|---|---|
+| Mozilla Observatory | nom d’hôte public | en-têtes locaux seulement |
+| Green Web Foundation | nom d’hôte public | statut vert inconnu |
+| Website Carbon | nombre d’octets et indicateur vert | estimation locale SWD v4 |
+| ipwho.is | adresse IP publique observée | pays/ASN inconnus, couverture réduite |
+| blocklist locale | aucune donnée externe | résultat limité à la liste embarquée |
+
+Les réponses externes sont indicatives, peuvent être mises en cache localement et peuvent devenir
+indisponibles. Le rapport conserve cette limite au lieu de transformer l’absence en preuve.
+
+## Calibration et benchmark
 
 ```bash
 python calibrate.py
+python benchmark/run_benchmark.py --mode fast
 ```
 
-Scanne les sites listes dans `calibration/sites.txt` et produit `calibration/results.json`.
+Ces commandes utilisent des URL publiques et écrivent respectivement `calibration/results.json`
+et les sorties ignorées de `benchmark/raw/` et `benchmark/summary/`. Les résultats historiques
+d’une ancienne méthodologie ne doivent pas être comparés à `OSIRIS-6A-2026.1`.
 
-## Architecture
-
-```
-osiris-scanner/
-├── scanner.py          # Orchestrateur principal (CLI)
-├── scoring.py          # Agregation ponderee (formule publique)
-├── report.py           # Generation rapports JSON + Markdown
-├── calibrate.py        # Script de calibration multi-sites
-├── axes/
-│   ├── performance.py  # Axe O — Wrapper Lighthouse CLI
-│   ├── security.py     # Axe S — Mozilla Observatory + Headers HTTP
-│   ├── intrusion.py    # Axe I — Detection trackers (fast: HTML, deep: Playwright)
-│   └── resource.py     # Axe R — Poids page + Website Carbon API
-├── blocklists/
-│   └── trackers.json   # 110+ domaines de tracking connus
-├── soic_v3/            # Quality gates, persistance, convergence (optionnel)
-├── calibration/        # Donnees de calibration
-├── reports/            # Rapports generes
-├── tests/              # ~156 tests unitaires
-└── pyproject.toml
-```
-
-## Formule de scoring
-
-```
-mu_osiris = Performance x 0.20 + Security x 0.30 + Intrusion x 0.30 + Resource x 0.20
-```
-
-| Axe | Poids | Outil | Mesure |
-|-----|------:|-------|--------|
-| O — Performance | 20% | Lighthouse CLI | Core Web Vitals, score 0-100 normalise a 0-10 |
-| S — Security | 30% | Mozilla Observatory + Headers | Grade + presence headers securite |
-| I — Intrusion | 30% | Blocklist Analysis (fast) / Playwright (deep) | Trackers detectes |
-| R — Resource | 20% | Page Weight + Website Carbon | Poids page + gCO2 estimes |
-
-### Grades
-
-| Score | Grade |
-|------:|-------|
-| 9.0 - 10.0 | Exemplaire |
-| 7.0 - 8.9 | Conforme |
-| 5.0 - 6.9 | A risque |
-| 0.0 - 4.9 | Critique |
-
-### Ponderations
-
-- **Securite et Intrusion (30% chacun)** : priorite a la protection des utilisateurs
-- **Performance et Resource (20% chacun)** : qualite de l'experience et eco-responsabilite
-
-## Limitations
-
-### Axe O — Performance
-
-- Lighthouse en mode headless peut donner des scores differents d'un navigateur reel
-- Certains sites bloquent Chrome headless (`NO_FCP`), rendant le scan impossible
-- **Variance ~10% entre executions** — utiliser `--runs 3` pour obtenir une mediane stable
-- Timeout par defaut : 120 secondes par run
-
-### Axe S — Security
-
-- Mozilla Observatory **cache les resultats 24h** ; un re-scan immediat retourne le cache
-- L'analyse des headers est limitee a la presence/absence, pas a la qualite de la configuration
-- Certains serveurs bloquent les requetes HEAD, necessitant un fallback GET
-
-### Axe I — Intrusion
-
-- **Mode fast** : analyse basee sur le HTML statique uniquement ; les trackers charges
-  dynamiquement par JavaScript ne sont **pas detectes** (cela explique les scores eleves
-  meme pour des sites connus pour leur tracking, ex: Google)
-- **Mode deep** : capture les network requests via Playwright ; detecte les trackers JS
-  dynamiques, mais necessite Chromium installe (`playwright install chromium`)
-- La blocklist couvre ~110 domaines ; les trackers non listes ne sont pas detectes
-
-### Axe R — Resource
-
-- **Mode fast** : mesure le poids du HTML principal uniquement (pas les assets)
-- **Mode deep** : mesure le poids total transfere (tous assets via Playwright)
-- L'API Website Carbon `/data` peut etre indisponible ; fallback sur le modele SWD v4 local
-- L'estimation gCO2 est approximative
-
-### General
-
-- OSIRIS mesure la sante **operationnelle** d'un site, pas sa qualite de contenu
-- **Ce n'est pas un pentest** et ne remplace pas un audit de securite professionnel
-- **Ce n'est pas une certification** de conformite (RGPD, WCAG, etc.)
-- Le scanner necessite un acces reseau aux APIs externes (Observatory, Website Carbon, Green Web Foundation)
-- Rate limiting : 1 scan Observatory par domaine toutes les 60 secondes
-- Un scan echoue partiellement est affiche avec un score partiel (moyenne des axes reussis)
-
-## Degradation gracieuse
-
-Si un axe echoue (timeout, API indisponible, Lighthouse absent), OSIRIS :
-1. Affiche l'erreur pour l'axe concerne
-2. Continue les axes restants
-3. Calcule un **score partiel** base sur les axes reussis (au lieu de crash)
-
-## Tests
+## Développement et validation
 
 ```bash
-# Tous les tests
-python -m pytest tests/ -v
-
-# Tests specifiques
-python -m pytest tests/test_performance.py -v
-python -m pytest tests/test_intrusion.py -v
-
-# Lint
+python -m compileall -q .
+pytest -q
 ruff check .
-
-# Type checking
-mypy axes/ scanner.py scoring.py report.py --ignore-missing-imports
+ruff format --check .
+mypy .
+bandit -q -r . -x ./tests
+pip-audit
+python -m build
+docker compose config
 ```
 
-## License
+La procédure complète et les fixtures réseau locales sont décrites dans
+[docs/DEVELOPMENT.md](docs/DEVELOPMENT.md). L’architecture est documentée dans
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
-MIT License — Copyright (c) 2026 [Mark Systems](https://marksystems.ca)
+## Limites
 
-See [LICENSE](LICENSE) for details.
+- OSIRIS n’est pas un pentest et n’exploite pas les vulnérabilités.
+- Les mesures de laboratoire et la géolocalisation IP varient selon le réseau, le CDN et le temps.
+- Le mode rapide ne voit pas tous les scripts injectés par JavaScript ni toutes les sous-ressources.
+- Les blocklists ont des faux négatifs et parfois des faux positifs.
+- L’absence d’une bannière, d’un lien ou d’un traceur n’établit aucune conformité globale.
+- Les sites qui bloquent l’automatisation peuvent produire un scan partiel.
 
----
+## Licence
 
-# OSIRIS Scanner — Website Operational Health Score
-
-Composite score (0-10) measuring the **operational health** of a website.
-
-OSIRIS aggregates results from third-party tools across 4 axes:
-**Performance (O)** + **Security (S)** + **Intrusion (I)** + **Resources (R)**.
-
-> **Disclaimer**: OSIRIS is an automated observation tool, not a pentest or compliance certification. Scores are indicative and subject to variance.
-
-## Scoring Formula
-
-```
-mu_osiris = Performance × 0.20 + Security × 0.30 + Intrusion × 0.30 + Resource × 0.20
-```
-
-| Axis | Weight | Tool | Measurement |
-|------|-------:|------|-------------|
-| O — Performance | 20% | Lighthouse CLI | Core Web Vitals, 0-100 normalized to 0-10 |
-| S — Security | 30% | Mozilla Observatory + Headers | Grade + security headers presence |
-| I — Intrusion | 30% | Blocklist Analysis (fast) / Playwright (deep) | Trackers detected |
-| R — Resource | 20% | Page Weight + Website Carbon | Page weight + estimated gCO2 |
-
-## Features
-
-- Two scan modes: **fast** (HTML parsing) and **deep** (Playwright headless browser)
-- Multi-run Lighthouse with median stabilization (`--runs 3`)
-- JSON + Markdown report generation
-- Scan history with trend tracking
-- Multi-site calibration tool
-- Graceful degradation (partial scores on axis failure)
-- 110+ known tracker domains in blocklist
-- ~156 unit tests
-
-## Quick Start
-
-```bash
-# Install
-python -m venv .venv && source .venv/bin/activate
-pip install -e ".[dev]"
-npm install -g lighthouse
-
-# Basic scan
-python scanner.py --url https://example.com
-
-# Deep scan with reports
-python scanner.py --url https://example.com --mode deep --runs 3 --output report
-```
-
-## License
-
-MIT License — Copyright (c) 2026 [Mark Systems](https://marksystems.ca)
+MIT — Copyright © 2026 Auxo Systems. Voir [LICENSE](LICENSE).
