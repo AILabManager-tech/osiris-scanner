@@ -11,19 +11,27 @@ Méthode : parsing HTML + analyse des ressources référencées.
 from __future__ import annotations
 
 import json
+import logging
 import re
+from importlib.resources import files
 from pathlib import Path
+from typing import Any
 from urllib.parse import urlparse
 
-import requests
+import aiohttp
 
+from axes import register_axis
 from axes.performance import AxisResult
+from url_security import NetworkPolicy, URLSecurityError, guard_browser_request, safe_fetch
+from utils import async_retry, extract_root_domain
+
+logger = logging.getLogger("osiris")
 
 # --- Constantes ---
 
-BLOCKLIST_PATH: str = "blocklists/trackers.json"
+BLOCKLIST_PATH: str = str(files("blocklists").joinpath("trackers.json"))
 PAGE_TIMEOUT_SECONDS: int = 30
-REQUEST_USER_AGENT: str = "OSIRIS-Scanner/0.1 (Intrusion Audit)"
+REQUEST_USER_AGENT: str = "OSIRIS-Scanner/0.3 (Intrusion Signals)"
 
 # Scoring : score inversé basé sur le nombre de trackers
 # 0 tracker = 10/10, >= MAX_TRACKERS_FOR_ZERO = 0/10
@@ -64,8 +72,8 @@ def _load_blocklist(blocklist_path: str | None = None) -> set[str]:
     return {d.lower().strip() for d in domains if isinstance(d, str)}
 
 
-def _fetch_page(url: str) -> str:
-    """Récupère le contenu HTML d'une page.
+async def _fetch_page(url: str, policy: NetworkPolicy | None = None) -> str:
+    """Récupère le contenu HTML d'une page (async).
 
     Args:
         url: URL de la page à récupérer.
@@ -77,21 +85,16 @@ def _fetch_page(url: str) -> str:
         RuntimeError: Si la requête échoue.
     """
     try:
-        response = requests.get(
+        response = await safe_fetch(
             url,
-            timeout=PAGE_TIMEOUT_SECONDS,
             headers={"User-Agent": REQUEST_USER_AGENT},
-            allow_redirects=True,
+            policy=policy,
         )
-        response.raise_for_status()
-    except requests.Timeout:
-        raise RuntimeError(
-            f"Page timeout après {PAGE_TIMEOUT_SECONDS}s pour {url}"
-        ) from None
-    except requests.RequestException as e:
+        if response.status >= 400:
+            raise RuntimeError(f"Page HTTP {response.status} pour {url}")
+        return response.text
+    except (TimeoutError, aiohttp.ClientError, URLSecurityError) as e:
         raise RuntimeError(f"Impossible de récupérer la page {url} : {e}") from e
-
-    return response.text
 
 
 def _extract_domains_from_html(html: str) -> set[str]:
@@ -124,7 +127,7 @@ def _extract_domains_from_html(html: str) -> set[str]:
 
 
 def _extract_host(url: str) -> str:
-    """Extrait le domaine racine d'une URL.
+    """Extrait le domaine racine d'une URL (délègue à utils.extract_root_domain).
 
     Args:
         url: URL complète.
@@ -132,12 +135,7 @@ def _extract_host(url: str) -> str:
     Returns:
         Domaine racine (ex: 'example.com' pour 'sub.example.com').
     """
-    parsed = urlparse(url)
-    hostname = (parsed.hostname or "").lower()
-    parts = hostname.split(".")
-    if len(parts) >= 2:
-        return ".".join(parts[-2:])
-    return hostname
+    return extract_root_domain(url)
 
 
 def _is_tracker(domain: str, blocklist: set[str]) -> bool:
@@ -205,7 +203,11 @@ def _compute_score(tracker_count: int) -> float:
     return round(10.0 * (1.0 - tracker_count / MAX_TRACKERS_FOR_ZERO), 1)
 
 
-async def scan_deep(url: str, blocklist_path: str | None = None) -> AxisResult:
+async def scan_deep(
+    url: str,
+    blocklist_path: str | None = None,
+    network_policy: NetworkPolicy | None = None,
+) -> AxisResult:
     """Scan deep : Playwright capture les network requests reelles.
 
     Detecte les trackers charges dynamiquement par JavaScript,
@@ -218,7 +220,10 @@ async def scan_deep(url: str, blocklist_path: str | None = None) -> AxisResult:
     Returns:
         AxisResult avec le score d'intrusion (deep).
     """
-    from playwright.async_api import async_playwright
+    try:
+        from playwright.async_api import async_playwright
+    except ImportError as exc:
+        raise RuntimeError("Playwright indisponible pour l'analyse dynamique des traceurs") from exc
 
     blocklist = _load_blocklist(blocklist_path)
     site_domain = _extract_host(url)
@@ -227,16 +232,23 @@ async def scan_deep(url: str, blocklist_path: str | None = None) -> AxisResult:
 
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True)
-        page = await browser.new_page()
+        context = await browser.new_context(service_workers="block")
+        page = await context.new_page()
+        route_cache: dict[str, bool] = {}
+        policy = network_policy or NetworkPolicy()
+        await page.route(
+            "**/*",
+            lambda route, request: guard_browser_request(route, request, policy, route_cache),
+        )
 
-        def on_request(request: object) -> None:
+        def on_request(request: Any) -> None:
             try:
-                req_url = request.url  # type: ignore[union-attr]
+                req_url = request.url
                 parsed = urlparse(req_url)
                 if parsed.hostname:
                     network_domains.add(parsed.hostname.lower())
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug("Requête Playwright non classifiable : %s", exc)
 
         page.on("request", on_request)
 
@@ -244,13 +256,18 @@ async def scan_deep(url: str, blocklist_path: str | None = None) -> AxisResult:
             await page.goto(url, wait_until="networkidle", timeout=60000)
             # Wait extra for lazy-loaded trackers
             await page.wait_for_timeout(3000)
-        except Exception:
-            pass
+        except Exception as exc:
+            raise RuntimeError(f"Capture réseau Playwright échouée : {exc}") from exc
         finally:
             await browser.close()
 
+    if not network_domains:
+        raise RuntimeError("Aucune requête réseau capturée par Playwright")
+
     first_party, third_party, trackers = _classify_domains(
-        network_domains, site_domain, blocklist,
+        network_domains,
+        site_domain,
+        blocklist,
     )
 
     total_domains = len(first_party) + len(third_party) + len(trackers)
@@ -259,6 +276,25 @@ async def scan_deep(url: str, blocklist_path: str | None = None) -> AxisResult:
 
     return AxisResult(
         score=score,
+        coverage=0.9,
+        observations=[
+            f"{len(trackers)} domaine(s) de traçage connu(s) parmi {total_domains} domaine(s)."
+        ],
+        evidence=[{"type": "tracker_domain", "value": domain} for domain in trackers],
+        risks=(
+            ["Des domaines associés au traçage ont été chargés par le navigateur."]
+            if trackers
+            else []
+        ),
+        recommendations=(
+            [
+                "Réduire les scripts tiers et vérifier leur déclenchement "
+                "selon le choix de consentement."
+            ]
+            if trackers
+            else []
+        ),
+        limitations=["La blocklist n'est pas exhaustive et peut produire des omissions."],
         details={
             "trackers_found": len(trackers),
             "tracker_domains": trackers,
@@ -277,7 +313,51 @@ async def scan_deep(url: str, blocklist_path: str | None = None) -> AxisResult:
     )
 
 
-async def scan(url: str, blocklist_path: str | None = None) -> AxisResult:
+async def scan_auto(
+    url: str,
+    blocklist_path: str | None = None,
+    network_policy: NetworkPolicy | None = None,
+) -> AxisResult:
+    """Scan automatique : tente Playwright (deep), fallback sur HTML statique.
+
+    Utilise Playwright si disponible pour capturer les requêtes réseau réelles.
+    Sinon, analyse le HTML statique (mode fast).
+
+    Args:
+        url: URL du site à scanner.
+        blocklist_path: Chemin optionnel vers la blocklist.
+
+    Returns:
+        AxisResult avec le score d'intrusion.
+    """
+    try:
+        import playwright.async_api  # noqa: F401
+
+        logger.debug("Playwright disponible — scan deep pour Axe I")
+        result = await scan_deep(url, blocklist_path, network_policy)
+        return result
+    except ImportError:
+        logger.debug("Playwright absent — fallback sur scan HTML statique")
+        return await scan(url, blocklist_path, network_policy)
+    except Exception as e:
+        logger.debug("Playwright échoué (%s) — fallback sur scan HTML statique", e)
+        return await scan(url, blocklist_path, network_policy)
+
+
+@register_axis(
+    "I",
+    label="Intrusion",
+    weight=0.20,
+    exc_types=(FileNotFoundError, RuntimeError),
+    scan_label="Scan Intrusion (Blocklist Analysis)...",
+    order=30,
+)
+@async_retry(max_retries=3, backoff=2.0, retry_on=(RuntimeError,))
+async def scan(
+    url: str,
+    blocklist_path: str | None = None,
+    network_policy: NetworkPolicy | None = None,
+) -> AxisResult:
     """Scanne une URL pour détecter les trackers et requêtes tierces.
 
     Récupère le HTML, extrait les domaines référencés, les compare
@@ -294,15 +374,11 @@ async def scan(url: str, blocklist_path: str | None = None) -> AxisResult:
         FileNotFoundError: Si la blocklist est introuvable.
         RuntimeError: Si la page est inaccessible.
     """
-    import asyncio
-
-    loop = asyncio.get_event_loop()
-
     # Charger la blocklist
-    blocklist = await loop.run_in_executor(None, _load_blocklist, blocklist_path)
+    blocklist = _load_blocklist(blocklist_path)
 
-    # Récupérer la page
-    html = await loop.run_in_executor(None, _fetch_page, url)
+    # Récupérer la page (async)
+    html = await _fetch_page(url, network_policy)
 
     # Extraire les domaines
     domains = _extract_domains_from_html(html)
@@ -318,7 +394,25 @@ async def scan(url: str, blocklist_path: str | None = None) -> AxisResult:
 
     return AxisResult(
         score=score,
+        coverage=0.65,
+        observations=[f"{len(trackers)} domaine(s) de traçage connu(s) dans le HTML statique."],
+        evidence=[{"type": "tracker_domain", "value": domain} for domain in trackers],
+        risks=(
+            ["Des domaines associés au traçage sont référencés dans le HTML initial."]
+            if trackers
+            else []
+        ),
+        recommendations=(
+            ["Vérifier la nécessité et le déclenchement des scripts tiers observés."]
+            if trackers
+            else []
+        ),
+        limitations=[
+            "Mode rapide : les traceurs injectés après exécution JavaScript ne sont pas observés.",
+            "La blocklist n'est pas exhaustive et peut produire des omissions.",
+        ],
         details={
+            "mode": "fast",
             "trackers_found": len(trackers),
             "tracker_domains": trackers,
             "third_party_domains": third_party,

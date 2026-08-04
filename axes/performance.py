@@ -1,18 +1,14 @@
-"""Axe O (Performance) — Wrapper Lighthouse CLI.
-
-Mesure la performance d'un site web via Google Lighthouse.
-Le score Lighthouse (0-100) est normalisé sur une échelle 0-10.
-"""
+"""Axe O (Performance) — mesures HTTP et navigateur sous garde réseau."""
 
 from __future__ import annotations
 
-import asyncio
-import json
-import shutil
-import tempfile
+import time
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Any
+
+from axes import register_axis
+from url_security import NetworkPolicy, guard_browser_request, safe_fetch
+from utils import async_retry
 
 
 @dataclass
@@ -23,163 +19,159 @@ class AxisResult:
     details: dict[str, Any] = field(default_factory=dict)
     tool_used: str = ""
     raw_output: Any = None
+    coverage: float = 1.0
+    observations: list[str] = field(default_factory=list)
+    evidence: list[dict[str, Any]] = field(default_factory=list)
+    risks: list[str] = field(default_factory=list)
+    recommendations: list[str] = field(default_factory=list)
+    limitations: list[str] = field(default_factory=list)
 
 
-LIGHTHOUSE_TIMEOUT_SECONDS: int = 120
-LIGHTHOUSE_SCORE_MAX: float = 100.0
-OSIRIS_SCORE_MAX: float = 10.0
+def _score_response_time(elapsed_ms: float) -> float:
+    """Convertit un temps de réponse borné en indicateur 0-10."""
+
+    if elapsed_ms <= 500:
+        return 10.0
+    if elapsed_ms >= 5000:
+        return 0.0
+    return round(10.0 * (1.0 - (elapsed_ms - 500.0) / 4500.0), 1)
 
 
-def _find_lighthouse() -> str:
-    """Trouve le chemin de l'exécutable Lighthouse.
+async def scan_deep(url: str, network_policy: NetworkPolicy | None = None) -> AxisResult:
+    """Mesure navigation et rendu avec Playwright sous garde SSRF."""
 
-    Returns:
-        Chemin vers l'exécutable lighthouse.
+    try:
+        from playwright.async_api import async_playwright
+    except ImportError as exc:
+        raise RuntimeError("Playwright indisponible pour la mesure approfondie") from exc
 
-    Raises:
-        FileNotFoundError: Si Lighthouse CLI n'est pas installé.
-    """
-    path = shutil.which("lighthouse")
-    if path is None:
-        raise FileNotFoundError(
-            "Lighthouse CLI introuvable. Installez-le avec : npm install -g lighthouse"
+    policy = network_policy or NetworkPolicy()
+    async with async_playwright() as playwright:
+        browser = await playwright.chromium.launch(headless=True)
+        context = await browser.new_context(
+            service_workers="block",
+            user_agent="OSIRIS-Scanner/0.3 (Performance Signals)",
         )
-    return path
-
-
-def _normalize_score(lighthouse_score: float) -> float:
-    """Normalise un score Lighthouse (0-100) vers OSIRIS (0-10).
-
-    Args:
-        lighthouse_score: Score Lighthouse entre 0 et 100.
-
-    Returns:
-        Score normalisé entre 0.0 et 10.0.
-    """
-    clamped = max(0.0, min(lighthouse_score, LIGHTHOUSE_SCORE_MAX))
-    return round(clamped / LIGHTHOUSE_SCORE_MAX * OSIRIS_SCORE_MAX, 1)
-
-
-def _parse_lighthouse_json(json_path: Path) -> tuple[float, dict[str, Any]]:
-    """Parse le fichier JSON de sortie Lighthouse.
-
-    Args:
-        json_path: Chemin vers le fichier JSON Lighthouse.
-
-    Returns:
-        Tuple (score_0_100, détails).
-
-    Raises:
-        ValueError: Si le JSON ne contient pas les données attendues.
-    """
-    raw = json.loads(json_path.read_text(encoding="utf-8"))
-
-    categories = raw.get("categories", {})
-    perf_category = categories.get("performance")
-    if perf_category is None:
-        raise ValueError("Le rapport Lighthouse ne contient pas la catégorie 'performance'")
-
-    score_raw = perf_category.get("score")
-    if score_raw is None:
-        raise ValueError("Score performance absent du rapport Lighthouse")
-
-    # Lighthouse retourne un score entre 0.0 et 1.0
-    score_0_100 = float(score_raw) * 100.0
-
-    # Extraire les métriques clés si disponibles
-    audits = raw.get("audits", {})
-    details: dict[str, Any] = {}
-    metric_keys = [
-        "first-contentful-paint",
-        "largest-contentful-paint",
-        "total-blocking-time",
-        "cumulative-layout-shift",
-        "speed-index",
-    ]
-    for key in metric_keys:
-        audit = audits.get(key)
-        if audit:
-            details[key] = {
-                "displayValue": audit.get("displayValue", "N/A"),
-                "score": audit.get("score"),
-            }
-
-    return score_0_100, details
-
-
-async def scan(url: str) -> AxisResult:
-    """Scanne la performance d'une URL via Lighthouse.
-
-    Exécute Lighthouse CLI en mode headless, parse le résultat JSON,
-    et retourne un score normalisé sur 10.
-
-    Args:
-        url: URL du site à scanner.
-
-    Returns:
-        AxisResult avec le score performance normalisé.
-
-    Raises:
-        FileNotFoundError: Si Lighthouse n'est pas installé.
-        RuntimeError: Si Lighthouse échoue ou timeout.
-        ValueError: Si le rapport est invalide.
-    """
-    lighthouse_bin = _find_lighthouse()
-
-    with tempfile.TemporaryDirectory() as tmpdir:
-        output_path = Path(tmpdir) / "report.json"
-
-        cmd = [
-            lighthouse_bin,
-            url,
-            "--output=json",
-            f"--output-path={output_path}",
-            '--chrome-flags=--headless=new --no-sandbox --disable-gpu',
-            "--quiet",
-        ]
-
+        page = await context.new_page()
+        route_cache: dict[str, bool] = {}
+        await page.route(
+            "**/*",
+            lambda route, request: guard_browser_request(route, request, policy, route_cache),
+        )
+        started = time.monotonic()
         try:
-            process = await asyncio.create_subprocess_exec(
-                *cmd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
+            response = await page.goto(url, wait_until="domcontentloaded", timeout=45000)
+            if response is None:
+                raise RuntimeError("Navigation sans réponse HTTP")
+            await page.wait_for_timeout(500)
+            metrics = await page.evaluate(
+                """() => {
+                  const nav = performance.getEntriesByType('navigation')[0];
+                  const paints = Object.fromEntries(
+                    performance.getEntriesByType('paint').map(p => [p.name, p.startTime])
+                  );
+                  return {
+                    responseStart: nav ? nav.responseStart : null,
+                    domContentLoaded: nav ? nav.domContentLoadedEventEnd : null,
+                    loadEvent: nav ? nav.loadEventEnd : null,
+                    transferSize: nav ? nav.transferSize : null,
+                    firstContentfulPaint: paints['first-contentful-paint'] ?? null
+                  };
+                }"""
             )
-            stdout, stderr = await asyncio.wait_for(
-                process.communicate(),
-                timeout=LIGHTHOUSE_TIMEOUT_SECONDS,
-            )
-        except TimeoutError:
-            try:
-                process.kill()
-                await process.wait()
-            except ProcessLookupError:
-                pass
-            raise RuntimeError(
-                f"Lighthouse timeout après {LIGHTHOUSE_TIMEOUT_SECONDS}s pour {url}"
-            ) from None
-        except OSError as e:
-            raise RuntimeError(f"Impossible de lancer Lighthouse : {e}") from e
+        except Exception as exc:
+            raise RuntimeError(f"Mesure Playwright échouée : {exc}") from exc
+        finally:
+            await browser.close()
 
-        if process.returncode != 0:
-            error_msg = stderr.decode(errors="replace").strip()
-            raise RuntimeError(
-                f"Lighthouse a échoué (code {process.returncode}) : {error_msg}"
-            )
-
-        if not output_path.exists():
-            raise RuntimeError("Lighthouse n'a pas généré de rapport JSON")
-
-        score_0_100, details = _parse_lighthouse_json(output_path)
-        raw_json = json.loads(output_path.read_text(encoding="utf-8"))
-
-    osiris_score = _normalize_score(score_0_100)
-
+    elapsed_ms = round((time.monotonic() - started) * 1000, 1)
+    dom_ms = float(metrics.get("domContentLoaded") or elapsed_ms)
+    score = _score_response_time(dom_ms)
+    risks = ["Le rendu initial dépasse 2,5 secondes."] if dom_ms > 2500 else []
     return AxisResult(
-        score=osiris_score,
+        score=score,
+        coverage=0.85,
+        observations=[f"DOMContentLoaded observé à {dom_ms:.0f} ms."],
+        evidence=[{"type": "navigation_timing", **metrics, "wallTime": elapsed_ms}],
+        risks=risks,
+        recommendations=(
+            ["Réduire le JavaScript bloquant et prioriser les ressources critiques."]
+            if risks
+            else []
+        ),
+        limitations=[
+            "Mesure locale Playwright; elle ne remplace pas un jeu de données utilisateur réel."
+        ],
+        details={"mode": "deep", "metrics": metrics, "wall_time_ms": elapsed_ms},
+        tool_used="Playwright Navigation Timing",
+        raw_output=metrics,
+    )
+
+
+@register_axis(
+    "O",
+    label="Performance",
+    weight=0.15,
+    exc_types=(RuntimeError, ValueError),
+    scan_label="Scan Performance (HTTP sécurisé)...",
+    order=10,
+)
+@async_retry(max_retries=2, backoff=2.0, retry_on=(RuntimeError,))
+async def scan(url: str, network_policy: NetworkPolicy | None = None) -> AxisResult:
+    """Mesure rapide et SSRF-safe du temps de réponse HTTP principal.
+
+    Lighthouse n'est pas exécuté sur une URL publique non fiable parce que son
+    Chrome autonome ne peut pas utiliser la garde réseau OSIRIS.
+    """
+
+    started = time.monotonic()
+    try:
+        response = await safe_fetch(
+            url,
+            policy=network_policy or NetworkPolicy(),
+            headers={"User-Agent": "OSIRIS-Scanner/0.3 (Performance Signals)"},
+        )
+    except Exception as exc:
+        raise RuntimeError(f"Mesure HTTP échouée : {exc}") from exc
+    elapsed_ms = round((time.monotonic() - started) * 1000, 1)
+    if response.status >= 400:
+        raise RuntimeError(f"Page HTTP {response.status} durant la mesure performance")
+    score = _score_response_time(elapsed_ms)
+    risks = ["Le temps de réponse HTTP principal dépasse 1,5 seconde."] if elapsed_ms > 1500 else []
+    return AxisResult(
+        score=score,
+        coverage=0.6,
+        observations=[f"Réponse principale reçue en {elapsed_ms:.0f} ms."],
+        evidence=[
+            {
+                "type": "http_timing",
+                "elapsed_ms": elapsed_ms,
+                "status": response.status,
+                "transfer_bytes": len(response.body),
+                "redirects": list(response.redirects),
+            }
+        ],
+        risks=risks,
+        recommendations=(
+            [
+                "Mesurer ensuite les Core Web Vitals avec des données terrain "
+                "ou un navigateur contrôlé."
+            ]
+            if risks
+            else []
+        ),
+        limitations=[
+            "Mode rapide : le temps HTTP ne mesure ni le rendu JavaScript ni les Core Web Vitals.",
+            "Lighthouse historique est désactivé sur les cibles non fiables "
+            "pour éviter le SSRF par sous-ressource.",
+        ],
         details={
-            "lighthouse_score": score_0_100,
-            "metrics": details,
+            "mode": "fast",
+            "response_time_ms": elapsed_ms,
+            "status_code": response.status,
+            "transfer_bytes": len(response.body),
+            "redirects": list(response.redirects),
         },
-        tool_used="Lighthouse",
-        raw_output=raw_json,
+        tool_used="Protected HTTP Timing",
+        raw_output=None,
     )

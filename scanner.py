@@ -1,164 +1,474 @@
-"""OSIRIS Scanner — Orchestrateur principal.
-
-Score composite (0-10) mesurant la santé opérationnelle d'un site web.
-4 axes : Performance (O) + Sécurité (S) + Intrusion (I) + Ressources (R).
-"""
+"""Moteur et CLI OSIRIS Scanner."""
 
 from __future__ import annotations
 
 import asyncio
-import re
+import logging
 import statistics
+import time
+from collections.abc import Callable
+from dataclasses import dataclass, field
+from typing import Any
 
 import click
 from rich.console import Console
 from rich.table import Table
 
-from axes.intrusion import scan as scan_intrusion
+from axes import CANONICAL_AXIS_KEYS, AxisInfo, discover_axes, registry
 from axes.performance import AxisResult
-from axes.performance import scan as scan_performance
-from axes.resource import scan as scan_resource
-from axes.security import scan as scan_security
-from report import generate_json_report, generate_markdown_report
-from scoring import compute_osiris_score, get_grade
+from history import ScanHistory
+from report import generate_json_report, generate_markdown_report, generate_pdf_report
+from scoring import ScoreSummary, compute_score_summary, get_grade
+from url_security import NetworkPolicy, URLSecurityError, validate_target_url, validate_url_syntax
+from utils import extract_domain
 
 console = Console()
+logger = logging.getLogger("osiris")
+ProgressCallback = Callable[[str, str, int], None]
 
-URL_PATTERN = re.compile(
-    r"^https?://"
-    r"(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+"
-    r"[a-zA-Z]{2,}"
-    r"(?::\d{1,5})?"
-    r"(?:/[^\s]*)?$"
-)
+discover_axes()
 
-# Axes definition: (key, label, scan_function, weight_display, exception_types)
-AXES = [
-    ("O", "Performance", scan_performance, "20%", (FileNotFoundError, RuntimeError, ValueError)),
-    ("S", "Security", scan_security, "30%", (RuntimeError,)),
-    ("I", "Intrusion", scan_intrusion, "30%", (FileNotFoundError, RuntimeError)),
-    ("R", "Resource", scan_resource, "20%", (RuntimeError,)),
-]
 
-SCAN_LABELS = {
-    "O": "Scan Performance (Lighthouse)...",
-    "S": "Scan Security (Observatory + Headers)...",
-    "I": "Scan Intrusion (Blocklist Analysis)...",
-    "R": "Scan Resource (Page Weight + Carbon)...",
-}
+@dataclass
+class AxisRun:
+    """Résultat d'exécution d'un axe, succès ou erreur explicite."""
+
+    key: str
+    label: str
+    result: AxisResult | None
+    error: str | None
+    elapsed_seconds: float
+
+
+@dataclass
+class ScanOutcome:
+    """Résultat complet consommé par le CLI, le web et les rapports."""
+
+    url: str
+    mode: str
+    status: str
+    results: dict[str, AxisResult] = field(default_factory=dict)
+    errors: dict[str, str] = field(default_factory=dict)
+    score: float | None = None
+    technical_score: float | None = None
+    grade: str = "Non évalué"
+    coverage: float = 0.0
+    reliability_factor: float = 0.0
+    duration_seconds: float = 0.0
+    runs: int = 1
+
+    @property
+    def is_partial(self) -> bool:
+        return self.status == "partial"
+
+    def scan_meta(self) -> dict[str, Any]:
+        return {
+            "mode": self.mode,
+            "runs": self.runs,
+            "status": self.status,
+            "duration_seconds": self.duration_seconds,
+            "coverage": self.coverage,
+            "reliability_factor": self.reliability_factor,
+            "technical_score": self.technical_score,
+            "failed_axes": self.errors,
+        }
+
+
+def _get_axes() -> list[AxisInfo]:
+    """Retourne les six axes canoniques dans l'ordre public."""
+
+    axes = registry.all()
+    keys = tuple(axis.key for axis in axes)
+    if set(keys) != set(CANONICAL_AXIS_KEYS):
+        missing = sorted(set(CANONICAL_AXIS_KEYS) - set(keys))
+        raise RuntimeError(f"Registre d'axes incomplet; axes manquants : {', '.join(missing)}")
+    registry.validate()
+    return axes
 
 
 def _validate_url(url: str) -> str:
-    """Valide et normalise une URL.
+    """Validation CLI syntaxique; la résolution sécurisée se fait dans le moteur."""
 
-    Args:
-        url: URL à valider.
-
-    Returns:
-        URL validée.
-
-    Raises:
-        click.BadParameter: Si l'URL est invalide.
-    """
-    if not URL_PATTERN.match(url):
-        raise click.BadParameter(f"URL invalide : {url}")
-    return url
+    try:
+        return validate_url_syntax(url)
+    except URLSecurityError as exc:
+        raise click.BadParameter(str(exc)) from exc
 
 
-def _display_result(axis_name: str, axis_label: str, result: AxisResult) -> None:
-    """Affiche le résultat d'un axe dans le terminal."""
+def _display_result(axis: AxisInfo, result: AxisResult) -> None:
     console.print(
-        f"Axe {axis_name} ({axis_label}) : {result.score}/10 — Source: {result.tool_used}"
+        f"Axe {axis.key} ({axis.label}) : {result.score}/10 — "
+        f"couverture {result.coverage:.0%} — {result.tool_used}"
     )
 
 
-async def _run_single_performance(url: str) -> AxisResult:
-    """Run a single Lighthouse scan, returning result or raising."""
-    return await scan_performance(url)
+def _is_deep_tool_error(exc: Exception) -> bool:
+    """Reconnaît une indisponibilité Playwright sans masquer une erreur de programmation."""
+
+    return isinstance(exc, RuntimeError) or type(exc).__module__.startswith("playwright.")
 
 
-async def _run_performance_multi(url: str, runs: int) -> AxisResult:
-    """Run Lighthouse N times and return median result.
+def _concise_error(exc: BaseException, limit: int = 300) -> str:
+    """Retire les bannières multilignes d'outils tout en conservant la cause utile."""
 
-    Tolerates individual timeouts. If all runs fail, raises RuntimeError.
-    """
+    first_line = next((line.strip() for line in str(exc).splitlines() if line.strip()), "Erreur")
+    return first_line[:limit]
+
+
+async def _run_single_performance(
+    url: str, network_policy: NetworkPolicy | None = None
+) -> AxisResult:
+    axis = registry.get("O")
+    if axis is None:
+        raise RuntimeError("Axe Performance (O) absent du registre")
+    return await axis.scan_fn(url, network_policy=network_policy)
+
+
+async def _run_performance_multi(
+    url: str,
+    runs: int,
+    network_policy: NetworkPolicy | None = None,
+) -> AxisResult:
+    """Répète la mesure rapide et conserve la médiane sans masquer les échecs."""
+
     results: list[AxisResult] = []
     errors: list[str] = []
-
-    for i in range(runs):
-        if runs > 1:
-            console.print(f"  [dim]Run {i + 1}/{runs}...[/dim]")
+    for _index in range(runs):
         try:
-            result = await _run_single_performance(url)
-            results.append(result)
-        except (FileNotFoundError, RuntimeError, ValueError) as e:
-            errors.append(str(e))
-            if runs > 1:
-                console.print(f"  [yellow]Run {i + 1} échoué : {e}[/yellow]")
-
+            results.append(await _run_single_performance(url, network_policy))
+        except (RuntimeError, ValueError) as exc:
+            errors.append(str(exc))
     if not results:
         raise RuntimeError(
-            f"Tous les {runs} runs Lighthouse ont échoué. Dernière erreur : {errors[-1]}"
+            f"Toutes les mesures performance ont échoué : {errors[-1] if errors else 'inconnu'}"
         )
 
-    # Median score
-    scores = [r.score for r in results]
-    median_score = round(statistics.median(scores), 1)
-
-    # Pick the result closest to median for details
-    best = min(results, key=lambda r: abs(r.score - median_score))
-
-    # Build runs detail for JSON report
-    runs_detail = [
-        {"run": i + 1, "score": r.score, "lighthouse_score": r.details.get("lighthouse_score")}
-        for i, r in enumerate(results)
-    ]
-
-    details = {
-        **best.details,
-        "runs": runs_detail,
+    median_score = round(statistics.median(result.score for result in results), 1)
+    selected = min(results, key=lambda result: abs(result.score - median_score))
+    selected.score = median_score
+    selected.coverage = round(
+        selected.coverage * (len(results) / runs),
+        2,
+    )
+    selected.details = {
+        **selected.details,
         "runs_requested": runs,
         "runs_succeeded": len(results),
         "runs_failed": len(errors),
+        "run_scores": [result.score for result in results],
         "aggregate": "median" if runs > 1 else "single",
     }
-
-    return AxisResult(
-        score=median_score,
-        details=details,
-        tool_used=f"Lighthouse (median of {len(results)})" if runs > 1 else "Lighthouse",
-        raw_output=best.raw_output,
-    )
+    if errors:
+        selected.limitations.append(f"{len(errors)} mesure(s) performance ont échoué.")
+    return selected
 
 
-async def _scan_axis(
+async def _invoke_axis(
+    axis: AxisInfo,
     url: str,
-    axis_key: str,
-    axis_label: str,
-    scan_fn: object,
-    exc_types: tuple[type[Exception], ...],
     *,
-    runs: int = 1,
-    mode: str = "fast",
-) -> AxisResult | None:
-    """Scan a single axis, returning None on failure instead of crashing."""
-    console.print(f"[dim]{SCAN_LABELS.get(axis_key, f'Scan {axis_label}...')}[/dim]")
+    mode: str,
+    runs: int,
+    scan_context: dict[str, Any],
+    network_policy: NetworkPolicy,
+) -> AxisResult:
+    """Sélectionne l'implémentation rapide/profonde d'un axe."""
+
+    if axis.key == "O":
+        if mode == "deep":
+            from axes.performance import scan_deep as performance_scan_deep
+
+            try:
+                result = await performance_scan_deep(url, network_policy)
+            except Exception as exc:
+                if not _is_deep_tool_error(exc):
+                    raise
+                result = await _run_performance_multi(url, runs, network_policy)
+                reason = _concise_error(exc)
+                result.details["degraded_from"] = reason
+                result.limitations.append(
+                    f"Mesure approfondie indisponible; repli HTTP sécurisé : {reason}"
+                )
+            return result
+        return await _run_performance_multi(url, runs, network_policy)
+
+    if axis.key == "S":
+        return await axis.scan_fn(url, network_policy=network_policy)
+
+    if axis.key == "I":
+        if mode == "deep":
+            from axes.intrusion import scan_deep as intrusion_scan_deep
+
+            try:
+                return await intrusion_scan_deep(url, network_policy=network_policy)
+            except Exception as exc:
+                if not _is_deep_tool_error(exc):
+                    raise
+                result = await axis.scan_fn(url, network_policy=network_policy)
+                reason = _concise_error(exc)
+                result.details["degraded_from"] = reason
+                result.limitations.append(f"Repli statique après échec Playwright : {reason}")
+                return result
+        return await axis.scan_fn(url, network_policy=network_policy)
+
+    if axis.key == "R":
+        if mode == "deep":
+            from axes.resource import scan_deep as resource_scan_deep
+
+            try:
+                return await resource_scan_deep(url, network_policy)
+            except Exception as exc:
+                if not _is_deep_tool_error(exc):
+                    raise
+                result = await axis.scan_fn(
+                    url,
+                    network_policy=network_policy,
+                )
+                reason = _concise_error(exc)
+                result.details["degraded_from"] = reason
+                result.limitations.append(f"Repli HTML après échec Playwright : {reason}")
+                return result
+        return await axis.scan_fn(
+            url,
+            network_policy=network_policy,
+        )
+
+    if axis.key == "V":
+        from axes.sovereignty import scan_static
+
+        if mode == "deep":
+            try:
+                return await axis.scan_fn(url, network_policy=network_policy)
+            except Exception as exc:
+                if not _is_deep_tool_error(exc):
+                    raise
+                result = await scan_static(url, network_policy)
+                reason = _concise_error(exc)
+                result.details["degraded_from"] = reason
+                result.limitations.append(f"Repli DNS/HTML après échec Playwright : {reason}")
+                return result
+        return await scan_static(url, network_policy)
+
+    if axis.key == "L":
+        from axes.legal import scan_static
+
+        if mode == "deep":
+            try:
+                return await axis.scan_fn(url, network_policy=network_policy)
+            except Exception as exc:
+                if not _is_deep_tool_error(exc):
+                    raise
+                result = await scan_static(url, network_policy)
+                reason = _concise_error(exc)
+                result.details["degraded_from"] = reason
+                result.limitations.append(f"Repli HTML après échec Playwright : {reason}")
+                return result
+        return await scan_static(url, network_policy)
+
+    raise RuntimeError(f"Axe inconnu : {axis.key}")
+
+
+async def _execute_axis(
+    axis: AxisInfo,
+    url: str,
+    *,
+    mode: str,
+    runs: int,
+    scan_context: dict[str, Any],
+    network_policy: NetworkPolicy,
+) -> AxisRun:
+    started = time.monotonic()
     try:
-        if axis_key == "O":
-            result = await _run_performance_multi(url, runs)
-        elif axis_key == "I" and mode == "deep":
-            from axes.intrusion import scan_deep as scan_intrusion_deep
-            result = await scan_intrusion_deep(url)
-        elif axis_key == "R" and mode == "deep":
-            from axes.resource import scan_deep as scan_resource_deep
-            result = await scan_resource_deep(url)
+        result = await _invoke_axis(
+            axis,
+            url,
+            mode=mode,
+            runs=runs,
+            scan_context=scan_context,
+            network_policy=network_policy,
+        )
+        degraded = result.details.get("degraded_from")
+        error = f"Repli après erreur approfondie : {degraded}" if degraded else None
+        return AxisRun(axis.key, axis.label, result, error, time.monotonic() - started)
+    except asyncio.CancelledError:
+        raise
+    except Exception as exc:
+        logger.debug("Axe %s échoué", axis.key, exc_info=True)
+        return AxisRun(
+            axis.key,
+            axis.label,
+            None,
+            f"{type(exc).__name__}: {_concise_error(exc)}",
+            time.monotonic() - started,
+        )
+
+
+def _emit(
+    callback: ProgressCallback | None,
+    stage: str,
+    message: str,
+    progress: int,
+) -> None:
+    if callback:
+        callback(stage, message, progress)
+
+
+async def execute_scan(
+    url: str,
+    *,
+    mode: str = "fast",
+    runs: int = 1,
+    network_policy: NetworkPolicy | None = None,
+    progress_callback: ProgressCallback | None = None,
+) -> ScanOutcome:
+    """Exécute le moteur canonique et retourne un résultat sans effet de bord."""
+
+    if mode not in {"fast", "deep"}:
+        raise ValueError("Le mode doit être 'fast' ou 'deep'")
+    if not 1 <= runs <= 5:
+        raise ValueError("runs doit être compris entre 1 et 5")
+
+    policy = network_policy or NetworkPolicy()
+    started = time.monotonic()
+    _emit(progress_callback, "validation", "Validation sécurisée de la cible", 5)
+    try:
+        async with asyncio.timeout(min(policy.request_timeout, policy.total_timeout)):
+            normalized_url = await asyncio.to_thread(validate_target_url, url, policy)
+    except TimeoutError:
+        return ScanOutcome(
+            url=url,
+            mode=mode,
+            runs=runs,
+            status="failed",
+            errors={"target": "Délai de résolution DNS dépassé"},
+            duration_seconds=round(time.monotonic() - started, 3),
+        )
+    except URLSecurityError as exc:
+        return ScanOutcome(
+            url=url,
+            mode=mode,
+            runs=runs,
+            status="failed",
+            errors={"target": str(exc)},
+            duration_seconds=round(time.monotonic() - started, 3),
+        )
+
+    axes = _get_axes()
+    remaining = {axis.key: axis for axis in axes}
+    completed: set[str] = set()
+    results: dict[str, AxisResult] = {}
+    errors: dict[str, str] = {}
+    scan_context: dict[str, Any] = {}
+
+    try:
+        remaining_timeout = max(0.001, policy.total_timeout - (time.monotonic() - started))
+        async with asyncio.timeout(remaining_timeout):
+            while remaining:
+                ready = [
+                    axis
+                    for axis in axes
+                    if axis.key in remaining and set(axis.after).issubset(completed)
+                ]
+                if not ready:
+                    raise RuntimeError("Cycle détecté dans les dépendances d'axes")
+                progress = 10 + int(75 * len(completed) / len(axes))
+                _emit(
+                    progress_callback,
+                    "axes",
+                    " · ".join(f"{axis.key} {axis.label}" for axis in ready),
+                    progress,
+                )
+                runs_out = await asyncio.gather(
+                    *(
+                        _execute_axis(
+                            axis,
+                            normalized_url,
+                            mode=mode,
+                            runs=runs,
+                            scan_context=scan_context,
+                            network_policy=policy,
+                        )
+                        for axis in ready
+                    )
+                )
+                for axis_run in runs_out:
+                    if axis_run.result is not None:
+                        results[axis_run.key] = axis_run.result
+                    if axis_run.error:
+                        errors[axis_run.key] = axis_run.error
+                    completed.add(axis_run.key)
+                    remaining.pop(axis_run.key, None)
+    except TimeoutError:
+        for axis_key in remaining:
+            errors[axis_key] = "Durée globale maximale dépassée"
+    except RuntimeError as exc:
+        errors["engine"] = str(exc)
+
+    duration = round(time.monotonic() - started, 3)
+    if not results:
+        _emit(progress_callback, "failed", "Aucun axe n'a produit de résultat", 100)
+        return ScanOutcome(
+            url=normalized_url,
+            mode=mode,
+            runs=runs,
+            status="failed",
+            errors=errors,
+            duration_seconds=duration,
+        )
+
+    summary: ScoreSummary = compute_score_summary(results)
+    status = "partial" if errors or summary.missing_axes else "complete"
+    outcome = ScanOutcome(
+        url=normalized_url,
+        mode=mode,
+        runs=runs,
+        status=status,
+        results=results,
+        errors=errors,
+        score=summary.score,
+        technical_score=summary.technical_score,
+        grade=get_grade(summary.score),
+        coverage=summary.coverage,
+        reliability_factor=summary.reliability_factor,
+        duration_seconds=duration,
+    )
+    _emit(progress_callback, "complete", "Rapport prêt", 100)
+    return outcome
+
+
+def _display_outcome(outcome: ScanOutcome) -> None:
+    if outcome.status == "failed":
+        console.print("[red]Échec du scan[/red]")
+        for key, error in outcome.errors.items():
+            console.print(f"  {key}: {error}")
+        return
+
+    table = Table(title="Résultats OSIRIS — six axes canoniques")
+    table.add_column("Axe", style="bold")
+    table.add_column("Score", justify="right")
+    table.add_column("Couverture", justify="right")
+    table.add_column("Source")
+    for axis in _get_axes():
+        result = outcome.results.get(axis.key)
+        if result:
+            table.add_row(
+                f"{axis.key} — {axis.label}",
+                f"{result.score:.1f}/10",
+                f"{result.coverage:.0%}",
+                result.tool_used,
+            )
         else:
-            result = await scan_fn(url)
-        _display_result(axis_key, axis_label, result)
-        return result
-    except exc_types as e:
-        console.print(f"[red]ERREUR {axis_label}[/red] : {e}")
-        return None
+            table.add_row(axis.key, "—", "0%", "Erreur technique")
+    console.print(table)
+    console.print(
+        f"\n[bold]Score publié : {outcome.score}/10 — {outcome.grade}[/bold]\n"
+        f"Score technique : {outcome.technical_score}/10 · couverture : {outcome.coverage:.0%} "
+        f"· facteur de fiabilité : {outcome.reliability_factor:.3f}"
+    )
+    if outcome.errors:
+        console.print("[yellow]Erreurs techniques partielles :[/yellow]")
+        for key, error in outcome.errors.items():
+            console.print(f"  {key}: {error}")
 
 
 async def _run_scan(
@@ -168,141 +478,105 @@ async def _run_scan(
     history: bool = False,
     runs: int = 1,
     mode: str = "fast",
-) -> None:
-    """Exécute le scan OSIRIS sur une URL."""
-    console.print(f"\n[bold]OSIRIS Scanner[/bold] — Analyse de {url}")
-    if mode == "deep":
-        console.print("[bold cyan]Mode : deep (Playwright)[/bold cyan]")
-    console.print()
+    output_dir: str | None = None,
+) -> ScanOutcome:
+    """Exécute, affiche, persiste et génère les sorties demandées."""
 
-    results: dict[str, AxisResult] = {}
-    failed_axes: list[str] = []
+    outcome = await execute_scan(url, mode=mode, runs=runs)
+    _display_outcome(outcome)
+    if outcome.status == "failed" or outcome.score is None:
+        return outcome
 
-    for axis_key, axis_label, scan_fn, _weight, exc_types in AXES:
-        result = await _scan_axis(
-            url, axis_key, axis_label, scan_fn, exc_types, runs=runs, mode=mode,
-        )
-        if result is not None:
-            results[axis_key] = result
-        else:
-            failed_axes.append(axis_key)
-
-    # Need all 4 axes for scoring
-    if failed_axes:
-        console.print(
-            f"\n[yellow]Axes en échec : {', '.join(failed_axes)}[/yellow]"
-        )
-        if len(results) < 4:
-            # Compute partial score with available axes
-            if results:
-                partial = sum(r.score for r in results.values()) / len(results)
-                partial = round(partial, 1)
-                grade = get_grade(partial)
-                console.print(
-                    f"\n[bold]Score OSIRIS partiel : {partial}/10 ({grade})[/bold]"
-                    f" — basé sur {len(results)}/4 axes\n"
-                )
-            else:
-                console.print("\n[red]Aucun axe n'a réussi. Scan avorté.[/red]\n")
-            return
-
-    osiris_score = compute_osiris_score(results)
-    grade = get_grade(osiris_score)
-
-    # Summary table
-    console.print()
-    table = Table(title="Résultats OSIRIS")
-    table.add_column("Axe", style="bold")
-    table.add_column("Score", justify="right")
-    table.add_column("Poids", justify="right")
-    table.add_column("Source")
-    for axis_key, axis_label, _fn, weight, _exc in AXES:
-        if axis_key in results:
-            r = results[axis_key]
-            table.add_row(f"{axis_key} — {axis_label}", f"{r.score}/10", weight, r.tool_used)
-    console.print(table)
-
-    console.print(f"\n[bold]Score OSIRIS : {osiris_score}/10 ({grade})[/bold]\n")
-
-    # SOIC persistence
-    try:
-        from soic_v3.osiris_adapter import save_osiris_scan
-        from soic_v3.persistence import RunStore
-
-        store = RunStore()
-        save_osiris_scan(url, results, osiris_score, grade, store)
-
-        delta = store.get_delta(url)
-        if delta:
-            delta_sign = "+" if delta.delta >= 0 else ""
-            delta_color = "green" if delta.delta >= 0 else "red"
-            console.print(
-                f"[{delta_color}]Delta vs précédent : "
-                f"{delta_sign}{delta.delta}/10[/{delta_color}]"
-            )
-            if delta.improved_axes:
-                console.print(f"  Améliorés : {', '.join(delta.improved_axes)}")
-            if delta.regressed_axes:
-                console.print(f"  Régressés : {', '.join(delta.regressed_axes)}")
-    except ImportError:
-        pass
-
-    # Reports
-    if output == "report":
-        scan_meta = {
-            "mode": mode,
-            "runs": runs,
-            "timeouts": len(failed_axes),
-        }
-        json_path = generate_json_report(
-            url, results, osiris_score, grade, scan_meta=scan_meta,
-        )
-        md_path = generate_markdown_report(
-            url, results, osiris_score, grade, scan_meta=scan_meta,
-        )
-        console.print(f"[green]Rapport JSON[/green] : {json_path}")
-        console.print(f"[green]Rapport Markdown[/green] : {md_path}")
-
-    # History
+    domain = extract_domain(outcome.url)
     if history:
-        try:
-            from soic_v3.osiris_adapter import get_osiris_history
-            from soic_v3.persistence import RunStore
+        scan_history = ScanHistory()
+        scan_history.save_scan(
+            domain,
+            outcome.url,
+            outcome.score,
+            outcome.grade,
+            {key: result.score for key, result in outcome.results.items()},
+            mode=mode,
+            details=outcome.scan_meta(),
+        )
+        scan_history.close()
 
-            store = RunStore()
-            hist = get_osiris_history(url, store, limit=10)
-            if hist:
-                console.print("\n[bold]Historique des scans[/bold]")
-                hist_table = Table(show_header=True)
-                hist_table.add_column("Score", justify="right")
-                hist_table.add_column("Grade")
-                hist_table.add_column("Date")
-                for entry in hist:
-                    hist_table.add_row(
-                        f"{entry.get('osiris_score', 0):.1f}/10",
-                        entry.get("grade", "?"),
-                        entry.get("timestamp", "?")[:19],
-                    )
-                console.print(hist_table)
-        except ImportError:
-            pass
+    if output == "report":
+        meta = outcome.scan_meta()
+        paths = (
+            generate_json_report(
+                outcome.url,
+                outcome.results,
+                outcome.score,
+                outcome.grade,
+                output_dir=output_dir,
+                scan_meta=meta,
+            ),
+            generate_markdown_report(
+                outcome.url,
+                outcome.results,
+                outcome.score,
+                outcome.grade,
+                output_dir=output_dir,
+                scan_meta=meta,
+            ),
+            generate_pdf_report(
+                outcome.url,
+                outcome.results,
+                outcome.score,
+                outcome.grade,
+                output_dir=output_dir,
+                scan_meta=meta,
+            ),
+        )
+        for path in paths:
+            console.print(f"[green]Rapport[/green] : {path}")
+    return outcome
+
+
+def _setup_logging(verbose: bool) -> None:
+    level = logging.DEBUG if verbose else logging.WARNING
+    osiris_logger = logging.getLogger("osiris")
+    osiris_logger.setLevel(level)
+    if not osiris_logger.handlers:
+        handler = logging.StreamHandler()
+        handler.setFormatter(logging.Formatter("[%(levelname)s] %(name)s — %(message)s"))
+        osiris_logger.addHandler(handler)
 
 
 @click.command()
-@click.option("--url", required=True, help="URL du site à scanner")
-@click.option("--output", type=click.Choice(["report"]), default=None, help="Générer un rapport")
-@click.option("--history", is_flag=True, default=False, help="Afficher l'historique du site")
-@click.option("--runs", type=int, default=1, help="Nombre de runs Lighthouse (médiane)")
-@click.option(
-    "--mode",
-    type=click.Choice(["fast", "deep"]),
-    default="fast",
-    help="Mode de scan (fast=HTML, deep=Playwright)",
-)
-def main(url: str, output: str | None, history: bool, runs: int, mode: str) -> None:
-    """OSIRIS — Score composite de santé opérationnelle d'un site web."""
+@click.option("--url", required=True, help="URL HTTP(S) publique à scanner")
+@click.option("--output", type=click.Choice(["report"]), default=None)
+@click.option("--output-dir", type=click.Path(file_okay=False), default=None)
+@click.option("--history", is_flag=True, default=False, help="Conserver ce scan localement")
+@click.option("--runs", type=click.IntRange(1, 5), default=1)
+@click.option("--mode", type=click.Choice(["fast", "deep"]), default="fast")
+@click.option("--verbose", is_flag=True, default=False)
+def main(
+    url: str,
+    output: str | None,
+    output_dir: str | None,
+    history: bool,
+    runs: int,
+    mode: str,
+    verbose: bool,
+) -> None:
+    """OSIRIS — diagnostic multidimensionnel de sites web."""
+
+    _setup_logging(verbose)
     validated_url = _validate_url(url)
-    asyncio.run(_run_scan(validated_url, output, history=history, runs=runs, mode=mode))
+    outcome = asyncio.run(
+        _run_scan(
+            validated_url,
+            output,
+            history=history,
+            runs=runs,
+            mode=mode,
+            output_dir=output_dir,
+        )
+    )
+    if outcome.status == "failed":
+        raise click.ClickException("Le scan n'a produit aucune donnée exploitable")
 
 
 if __name__ == "__main__":

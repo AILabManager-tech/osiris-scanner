@@ -4,13 +4,13 @@
 
 # --- Institutions / Exemplaire ---
 https://gov.uk
-https://marksystems.ca
+https://auxosystems.ca
 
 # --- Media / Mixte ---
 https://radio-canada.ca
 https://bbc.com
 
-# --- Tech / Conforme ---
+# --- Tech / Bon profil technique attendu ---
 https://github.com
 https://shopify.com
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -16,6 +17,7 @@ from axes.intrusion import (
     _is_tracker,
     _load_blocklist,
     scan,
+    scan_auto,
     scan_deep,
 )
 
@@ -159,7 +161,6 @@ class TestComputeScore:
 
 
 class TestScan:
-    @pytest.mark.asyncio
     async def test_scan_no_trackers(self, tmp_path: Path) -> None:
         """Page sans tracker → score 10."""
         blocklist_path = tmp_path / "trackers.json"
@@ -169,17 +170,13 @@ class TestScan:
         )
 
         html = '<html><script src="https://cdn.example.com/app.js"></script></html>'
-        mock_response = MagicMock()
-        mock_response.text = html
-        mock_response.raise_for_status = MagicMock()
 
-        with patch("axes.intrusion.requests.get", return_value=mock_response):
+        with patch("axes.intrusion._fetch_page", new_callable=AsyncMock, return_value=html):
             result = await scan("https://example.com", blocklist_path=str(blocklist_path))
 
         assert result.score == 10.0
         assert result.details["trackers_found"] == 0
 
-    @pytest.mark.asyncio
     async def test_scan_with_trackers(self, tmp_path: Path) -> None:
         """Page avec trackers → score réduit."""
         blocklist_path = tmp_path / "trackers.json"
@@ -196,18 +193,14 @@ class TestScan:
         <script src="https://cdn.example.com/app.js"></script>
         </html>
         """
-        mock_response = MagicMock()
-        mock_response.text = html
-        mock_response.raise_for_status = MagicMock()
 
-        with patch("axes.intrusion.requests.get", return_value=mock_response):
+        with patch("axes.intrusion._fetch_page", new_callable=AsyncMock, return_value=html):
             result = await scan("https://example.com", blocklist_path=str(blocklist_path))
 
         assert result.score < 10.0
         assert result.details["trackers_found"] == 3
         assert len(result.details["tracker_domains"]) == 3
 
-    @pytest.mark.asyncio
     async def test_scan_page_error(self, tmp_path: Path) -> None:
         """Page inaccessible → RuntimeError."""
         blocklist_path = tmp_path / "trackers.json"
@@ -216,22 +209,43 @@ class TestScan:
             encoding="utf-8",
         )
 
-        import requests as req_lib
-
         with (
             patch(
-                "axes.intrusion.requests.get",
-                side_effect=req_lib.Timeout("timeout"),
+                "axes.intrusion._fetch_page",
+                new_callable=AsyncMock,
+                side_effect=RuntimeError("Page timeout après 30s pour https://unreachable.com"),
             ),
             pytest.raises(RuntimeError, match="timeout"),
         ):
             await scan("https://unreachable.com", blocklist_path=str(blocklist_path))
 
 
+class TestScanAuto:
+    """Tests for auto mode (Playwright fallback)."""
+
+    async def test_auto_falls_back_to_html_when_no_playwright(self, tmp_path: Path) -> None:
+        """When Playwright is not importable, falls back to fast scan."""
+        blocklist_path = tmp_path / "trackers.json"
+        blocklist_path.write_text(
+            json.dumps({"domains": ["google-analytics.com"]}),
+            encoding="utf-8",
+        )
+
+        html = '<html><script src="https://cdn.example.com/app.js"></script></html>'
+
+        with (
+            patch("axes.intrusion._fetch_page", new_callable=AsyncMock, return_value=html),
+            patch.dict("sys.modules", {"playwright": None, "playwright.async_api": None}),
+        ):
+            result = await scan_auto("https://example.com", blocklist_path=str(blocklist_path))
+
+        assert result.score == 10.0
+        assert result.tool_used == "OSIRIS Blocklist Analysis"
+
+
 class TestScanDeep:
     """Tests for deep mode (Playwright-based)."""
 
-    @pytest.mark.asyncio
     async def test_deep_detects_dynamic_trackers(self, tmp_path: Path) -> None:
         """Deep mode detects trackers loaded via JS that fast misses."""
         blocklist_path = tmp_path / "trackers.json"
@@ -241,11 +255,11 @@ class TestScanDeep:
         )
 
         # Mock Playwright: capture the on("request") handler, then fire it in goto
-        captured_handler = None
+        captured_handler: Callable[[object], None] | None = None
 
         mock_page = AsyncMock()
 
-        def fake_on(event: str, handler: object) -> None:
+        def fake_on(event: str, handler: Callable[[object], None]) -> None:
             nonlocal captured_handler
             if event == "request":
                 captured_handler = handler
@@ -266,8 +280,11 @@ class TestScanDeep:
         mock_page.goto = fake_goto
         mock_page.wait_for_timeout = AsyncMock()
 
+        mock_context = AsyncMock()
+        mock_context.new_page = AsyncMock(return_value=mock_page)
+
         mock_browser = AsyncMock()
-        mock_browser.new_page = AsyncMock(return_value=mock_page)
+        mock_browser.new_context = AsyncMock(return_value=mock_context)
         mock_browser.close = AsyncMock()
 
         mock_pw_instance = AsyncMock()
@@ -278,10 +295,12 @@ class TestScanDeep:
         mock_pw.__aexit__ = AsyncMock(return_value=False)
 
         with patch(
-            "playwright.async_api.async_playwright", return_value=mock_pw,
+            "playwright.async_api.async_playwright",
+            return_value=mock_pw,
         ):
             result = await scan_deep(
-                "https://example.com", blocklist_path=str(blocklist_path),
+                "https://example.com",
+                blocklist_path=str(blocklist_path),
             )
 
         assert result.details["mode"] == "deep"

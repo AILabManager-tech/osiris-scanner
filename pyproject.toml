@@ -1,30 +1,59 @@
+[build-system]
+requires = ["setuptools>=75", "wheel"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "osiris-scanner"
-version = "0.2.0"
-description = "OSIRIS — Score composite (0-10) mesurant la santé opérationnelle d'un site web"
+version = "0.3.0"
+description = "Diagnostic technique multidimensionnel et prudent de sites web"
+readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-    "requests>=2.31",
+    "aiohttp>=3.9",
     "click>=8.1",
     "rich>=13.0",
-    "playwright>=1.40",
+    "reportlab>=4.0",
 ]
 
 [project.optional-dependencies]
+deep = ["playwright>=1.40"]
 dev = [
+    "build>=1.2",
     "pytest>=7.0",
     "pytest-asyncio>=0.21",
+    "playwright>=1.40",
     "ruff>=0.1",
     "bandit>=1.7",
+    "pip-audit>=2.7",
     "radon>=6.0",
     "mypy>=1.0",
 ]
 
 [tool.setuptools.packages.find]
-include = ["axes", "axes.*"]
+include = ["axes", "axes.*", "blocklists", "osiris_web", "osiris_web.*"]
+
+[tool.setuptools]
+include-package-data = true
+py-modules = [
+    "scanner",
+    "scoring",
+    "report",
+    "history",
+    "calibrate",
+    "cache",
+    "utils",
+    "url_security",
+    "blocklist_updater",
+    "webapp",
+]
+
+[tool.setuptools.package-data]
+blocklists = ["*.json"]
+osiris_web = ["static/*.html", "static/*.css", "static/*.js"]
 
 [project.scripts]
 osiris = "scanner:main"
+osiris-web = "webapp:main"
 
 [tool.ruff]
 target-version = "py311"
@@ -36,3 +65,9 @@ select = ["E", "F", "W", "I", "N", "UP", "B", "A", "SIM"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+
+[tool.mypy]
+python_version = "3.11"
+ignore_missing_imports = true
+check_untyped_defs = true
+no_implicit_optional = true

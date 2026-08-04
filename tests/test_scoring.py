@@ -1,4 +1,4 @@
-"""Tests unitaires pour scoring.py."""
+"""Contrat public du scoring canonique à six axes."""
 
 from __future__ import annotations
 
@@ -6,98 +6,110 @@ import pytest
 
 from axes.performance import AxisResult
 from scoring import (
+    METHODOLOGY_VERSION,
     WEIGHT_INTRUSION,
+    WEIGHT_LEGAL,
     WEIGHT_PERFORMANCE,
     WEIGHT_RESOURCE,
     WEIGHT_SECURITY,
+    WEIGHT_SOVEREIGNTY,
     compute_osiris_score,
+    compute_partial_score,
+    compute_score_summary,
     get_grade,
 )
 
 
-def _make_results(o: float, s: float, i: float, r: float) -> dict[str, AxisResult]:
-    """Helper pour créer un dict de résultats."""
+def _results(score: float = 8.0, coverage: float = 1.0) -> dict[str, AxisResult]:
     return {
-        "O": AxisResult(score=o, tool_used="test"),
-        "S": AxisResult(score=s, tool_used="test"),
-        "I": AxisResult(score=i, tool_used="test"),
-        "R": AxisResult(score=r, tool_used="test"),
+        key: AxisResult(score=score, coverage=coverage, tool_used="test")
+        for key in ("O", "S", "I", "R", "V", "L")
     }
 
 
-# --- Tests compute_osiris_score ---
+def test_weights_sum_to_one() -> None:
+    total = (
+        WEIGHT_PERFORMANCE
+        + WEIGHT_SECURITY
+        + WEIGHT_INTRUSION
+        + WEIGHT_RESOURCE
+        + WEIGHT_SOVEREIGNTY
+        + WEIGHT_LEGAL
+    )
+    assert total == pytest.approx(1.0)
 
 
-class TestComputeOsirisScore:
-    def test_all_tens(self) -> None:
-        results = _make_results(10.0, 10.0, 10.0, 10.0)
-        assert compute_osiris_score(results) == 10.0
-
-    def test_all_zeros(self) -> None:
-        results = _make_results(0.0, 0.0, 0.0, 0.0)
-        assert compute_osiris_score(results) == 0.0
-
-    def test_formula_correctness(self) -> None:
-        results = _make_results(8.0, 6.0, 7.0, 9.0)
-        expected = round(
-            8.0 * WEIGHT_PERFORMANCE
-            + 6.0 * WEIGHT_SECURITY
-            + 7.0 * WEIGHT_INTRUSION
-            + 9.0 * WEIGHT_RESOURCE,
-            1,
-        )
-        assert compute_osiris_score(results) == expected
-
-    def test_weights_sum_to_one(self) -> None:
-        total = WEIGHT_PERFORMANCE + WEIGHT_SECURITY + WEIGHT_INTRUSION + WEIGHT_RESOURCE
-        assert total == pytest.approx(1.0)
-
-    def test_security_intrusion_higher_weight(self) -> None:
-        """S et I à 0, O et R à 10 → score bas car S+I pèsent 60%."""
-        results = _make_results(10.0, 0.0, 0.0, 10.0)
-        score = compute_osiris_score(results)
-        assert score == 4.0  # (10*0.2 + 0*0.3 + 0*0.3 + 10*0.2) = 4.0
-
-    def test_missing_axis_raises(self) -> None:
-        results = {
-            "O": AxisResult(score=10.0, tool_used="test"),
-            "S": AxisResult(score=10.0, tool_used="test"),
-        }
-        with pytest.raises(ValueError, match="Axes manquants"):
-            compute_osiris_score(results)
-
-    def test_asymmetric_scores(self) -> None:
-        results = _make_results(5.0, 5.0, 5.0, 5.0)
-        assert compute_osiris_score(results) == 5.0
+def test_complete_equal_scores_are_unchanged() -> None:
+    summary = compute_score_summary(_results(8.0))
+    assert summary.technical_score == 8.0
+    assert summary.score == 8.0
+    assert summary.coverage == 1.0
+    assert summary.missing_axes == ()
 
 
-# --- Tests get_grade ---
+def test_weighted_arithmetic_formula() -> None:
+    results = _results()
+    scores = {"O": 8.0, "S": 6.0, "I": 7.0, "R": 9.0, "V": 5.0, "L": 4.0}
+    for key, value in scores.items():
+        results[key].score = value
+    expected = round(
+        8.0 * WEIGHT_PERFORMANCE
+        + 6.0 * WEIGHT_SECURITY
+        + 7.0 * WEIGHT_INTRUSION
+        + 9.0 * WEIGHT_RESOURCE
+        + 5.0 * WEIGHT_SOVEREIGNTY
+        + 4.0 * WEIGHT_LEGAL,
+        1,
+    )
+    assert compute_osiris_score(results) == expected
 
 
-class TestGetGrade:
-    def test_exemplaire_10(self) -> None:
-        assert get_grade(10.0) == "Exemplaire"
+def test_partial_scan_gets_documented_reliability_penalty() -> None:
+    summary = compute_score_summary({"S": AxisResult(score=8.0, coverage=1.0)})
+    assert summary.technical_score == 8.0
+    assert summary.coverage == WEIGHT_SECURITY
+    assert summary.reliability_factor == pytest.approx(0.812, abs=0.001)
+    assert summary.score < summary.technical_score
+    assert set(summary.missing_axes) == {"O", "I", "R", "V", "L"}
 
-    def test_exemplaire_9(self) -> None:
-        assert get_grade(9.0) == "Exemplaire"
 
-    def test_conforme_8_9(self) -> None:
-        assert get_grade(8.9) == "Conforme"
+def test_axis_coverage_reduces_reliability_without_faking_axis_score() -> None:
+    summary = compute_score_summary(_results(10.0, coverage=0.5))
+    assert summary.technical_score == 10.0
+    assert summary.coverage == 0.5
+    assert summary.score == 8.8
 
-    def test_conforme_7(self) -> None:
-        assert get_grade(7.0) == "Conforme"
 
-    def test_a_risque_6_9(self) -> None:
-        assert get_grade(6.9) == "À risque"
+def test_scores_are_bounded() -> None:
+    results = _results()
+    results["O"].score = 99
+    results["S"].score = -5
+    assert 0.0 <= compute_osiris_score(results) <= 10.0
 
-    def test_a_risque_5(self) -> None:
-        assert get_grade(5.0) == "À risque"
 
-    def test_critique_4_9(self) -> None:
-        assert get_grade(4.9) == "Critique"
+def test_empty_or_unknown_results_raise() -> None:
+    with pytest.raises(ValueError, match="Aucun axe"):
+        compute_osiris_score({})
+    with pytest.raises(ValueError, match="canonique"):
+        compute_osiris_score({"X": AxisResult(score=5.0)})
 
-    def test_critique_0(self) -> None:
-        assert get_grade(0.0) == "Critique"
 
-    def test_critique_1(self) -> None:
-        assert get_grade(1.0) == "Critique"
+@pytest.mark.parametrize(
+    ("score", "status"),
+    [
+        (10.0, "Bon"),
+        (8.5, "Bon"),
+        (8.4, "À surveiller"),
+        (6.5, "À surveiller"),
+        (6.4, "Risque élevé"),
+        (0.0, "Risque élevé"),
+    ],
+)
+def test_statuses_are_technical_not_legal(score: float, status: str) -> None:
+    assert get_grade(score) == status
+
+
+def test_partial_alias_and_methodology_version() -> None:
+    results = {"O": AxisResult(score=7.0, coverage=0.6)}
+    assert compute_partial_score(results) == compute_osiris_score(results)
+    assert METHODOLOGY_VERSION == "OSIRIS-6A-2026.1"
