@@ -26,7 +26,7 @@ def async_retry(
 
     Args:
         max_retries: Nombre maximum de tentatives (incluant la première).
-        backoff: Facteur multiplicatif du délai entre chaque retry.
+        backoff: Délai initial en secondes, doublé après chaque échec.
         retry_on: Types d'exceptions déclenchant un retry.
 
     Returns:
@@ -43,7 +43,7 @@ def async_retry(
                 except retry_on as e:
                     last_exception = e
                     if attempt < max_retries - 1:
-                        delay = backoff**attempt
+                        delay = backoff * (2**attempt)
                         logger.debug(
                             "Retry %d/%d pour %s après %.1fs : %s",
                             attempt + 1,

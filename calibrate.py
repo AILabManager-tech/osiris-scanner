@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import argparse
 import asyncio
 import json
 from datetime import UTC, datetime
+from importlib.resources import files
 from pathlib import Path
 from typing import Any
 
@@ -32,11 +34,18 @@ async def scan_site(url: str, *, mode: str = "fast") -> dict[str, Any]:
     }
 
 
-async def main() -> None:
-    sites_file = Path("calibration/sites.txt")
+async def main(
+    sites_path: str | None = None,
+    output_path: str = "osiris-calibration-results.json",
+) -> None:
+    sites_text = (
+        Path(sites_path).read_text(encoding="utf-8")
+        if sites_path
+        else files("calibration").joinpath("sites.txt").read_text(encoding="utf-8")
+    )
     urls = [
         line.strip()
-        for line in sites_file.read_text(encoding="utf-8").splitlines()
+        for line in sites_text.splitlines()
         if line.strip() and not line.startswith("#")
     ]
     results = [await scan_site(url) for url in urls]
@@ -47,10 +56,18 @@ async def main() -> None:
         "sites_failed": sum(result["status"] == "failed" for result in results),
         "results": results,
     }
-    path = Path("calibration/results.json")
+    path = Path(output_path)
     path.write_text(json.dumps(output, indent=2, ensure_ascii=False), encoding="utf-8")
     print(f"Résultats sauvegardés : {path}")
 
 
+def cli() -> None:
+    parser = argparse.ArgumentParser(description="Calibration multi-cibles OSIRIS")
+    parser.add_argument("--sites", default=None, help="Fichier d'URL, une par ligne")
+    parser.add_argument("--output", default="osiris-calibration-results.json")
+    args = parser.parse_args()
+    asyncio.run(main(args.sites, args.output))
+
+
 if __name__ == "__main__":
-    asyncio.run(main())
+    cli()

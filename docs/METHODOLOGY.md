@@ -61,6 +61,9 @@ scripts injectés après rendu ne sont pas observés. Les valeurs précises sont
 Le statut du scan est `complete` si les six axes produisent leur mesure demandée, `partial` si un
 axe manque ou se replie après une erreur du mode approfondi, et `failed` si aucune donnée exploitable
 n’est produite ou si la cible est refusée.
+Sous 70 % de couverture pondérée, le statut global devient `Donnée insuffisante` même si un score
+numérique pénalisé reste fourni pour la traçabilité. Le statut ne transforme donc pas une absence de
+preuve en risque technique élevé.
 
 ## Profil Diagnostic technique Loi 25
 

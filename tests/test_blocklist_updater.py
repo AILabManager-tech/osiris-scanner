@@ -102,6 +102,33 @@ class TestUpdateBlocklist:
 
         assert stats["total_count"] == 2  # existing + easyprivacy
 
+    async def test_update_preserves_existing_file_when_all_sources_fail(
+        self, tmp_path: Path
+    ) -> None:
+        path = tmp_path / "trackers.json"
+        original = {
+            "domains": ["existing.com"],
+            "_meta": {"updated": "2025-01-01T00:00:00Z", "sources": ["existing"]},
+        }
+        path.write_text(json.dumps(original), encoding="utf-8")
+
+        with (
+            patch(
+                "blocklist_updater._fetch_disconnect_domains",
+                new_callable=AsyncMock,
+                return_value=set(),
+            ),
+            patch(
+                "blocklist_updater._fetch_easyprivacy_domains",
+                new_callable=AsyncMock,
+                return_value=set(),
+            ),
+        ):
+            stats = await update_blocklist(str(path))
+
+        assert stats["status"] == "failed"
+        assert json.loads(path.read_text(encoding="utf-8")) == original
+
     async def test_update_no_duplicates(self, tmp_path: Path) -> None:
         """Domains from multiple sources are deduplicated."""
         path = tmp_path / "trackers.json"

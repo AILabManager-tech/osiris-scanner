@@ -236,7 +236,7 @@ async def scan_deep(url: str, network_policy: NetworkPolicy | None = None) -> Ax
         browser = await p.chromium.launch(headless=True)
         context = await browser.new_context(service_workers="block")
         page = await context.new_page()
-        route_cache: dict[str, bool] = {}
+        route_cache: dict[str, Any] = {}
         policy = network_policy or NetworkPolicy()
         await page.route(
             "**/*",

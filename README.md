@@ -138,10 +138,11 @@ La politique réseau est fermée par défaut :
 - refus des identifiants intégrés, localhost, loopback, réseaux privés, link-local, réservés et
   métadonnées cloud;
 - résolution DNS contrôlée au départ et à la connexion;
-- revalidation de chaque redirection et sous-ressource Playwright;
-- aucune autorisation DNS mise en cache, pour limiter le rebinding;
-- maximum de cinq redirections, 30 secondes par requête, 180 secondes globales et 5 MiB par
-  réponse;
+- revalidation de chaque redirection et relais de chaque sous-ressource Playwright par la pile HTTP
+  protégée; Chromium ne contacte jamais directement la cible;
+- aucune autorisation DNS mise en cache;
+- maximum de cinq redirections, 30 secondes par requête, 180 secondes globales, 5 MiB par réponse
+  et 20 MiB par axe navigateur;
 - aucun accès implicite au système de fichiers local.
 
 Voir [docs/SECURITY.md](docs/SECURITY.md) pour le modèle de menace et les limites.
@@ -162,11 +163,11 @@ indisponibles. Le rapport conserve cette limite au lieu de transformer l’absen
 ## Calibration et benchmark
 
 ```bash
-python calibrate.py
+osiris-calibrate
 python benchmark/run_benchmark.py --mode fast
 ```
 
-Ces commandes utilisent des URL publiques et écrivent respectivement `calibration/results.json`
+Ces commandes utilisent des URL publiques et écrivent respectivement `osiris-calibration-results.json`
 et les sorties ignorées de `benchmark/raw/` et `benchmark/summary/`. Les résultats historiques
 d’une ancienne méthodologie ne doivent pas être comparés à `OSIRIS-6A-2026.1`.
 

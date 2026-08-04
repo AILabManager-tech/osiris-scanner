@@ -18,7 +18,7 @@ from typing import Any
 
 from axes import register_axis
 from axes.performance import AxisResult
-from url_security import NetworkPolicy, guard_browser_request, safe_fetch
+from url_security import NetworkPolicy, guard_browser_request, redact_url, safe_fetch
 from utils import extract_domain
 
 logger = logging.getLogger("osiris")
@@ -75,6 +75,18 @@ def _privacy_links_from_html(content: str) -> list[str]:
         if any(term in text.lower() for term in ("confidentialité", "privacy", "vie privée")):
             links.append(href)
     return sorted(set(links))
+
+
+def _has_privacy_contact_signal(content: str) -> bool:
+    """Détecte un rôle vie privée dans la partie locale d'une adresse mailto."""
+
+    for address in re.findall(r"mailto:([^\s\"'<>?]+)", content, flags=re.IGNORECASE):
+        local_part, separator, _domain = address.partition("@")
+        if separator and any(
+            term in local_part.lower() for term in ("privacy", "rpp", "confidentialite", "legal")
+        ):
+            return True
+    return False
 
 
 async def scan_static(url: str, network_policy: NetworkPolicy | None = None) -> AxisResult:
@@ -183,7 +195,7 @@ async def scan(url: str, network_policy: NetworkPolicy | None = None) -> AxisRes
             service_workers="block",
         )
         page = await context.new_page()
-        route_cache: dict[str, bool] = {}
+        route_cache: dict[str, Any] = {}
         await page.route(
             "**/*",
             lambda route, request: guard_browser_request(route, request, policy, route_cache),
@@ -194,7 +206,7 @@ async def scan(url: str, network_policy: NetworkPolicy | None = None) -> AxisRes
 
         async def on_request_alpha(request):
             if await _is_tracker(request.url):
-                captured_trackers.append(request.url)
+                captured_trackers.append(redact_url(request.url))
 
         page.on("request", on_request_alpha)
 
@@ -238,7 +250,7 @@ async def scan(url: str, network_policy: NetworkPolicy | None = None) -> AxisRes
 
                 async def on_request_beta(request):
                     if await _is_tracker(request.url):
-                        trackers_after_refusal.append(request.url)
+                        trackers_after_refusal.append(redact_url(request.url))
 
                 page.on("request", on_request_beta)
 
@@ -256,15 +268,7 @@ async def scan(url: str, network_policy: NetworkPolicy | None = None) -> AxisRes
             # --- État Gamma : Transparence ---
             # Recherche du RPP (Responsable Protection Privée)
             content = await page.content()
-            # Recherche de mailto: contenant privacy, rpp, confidentialite
-            rpp_match = re.search(
-                r"mailto:[a-zA-Z0-9._%+-]+@"
-                r"(privacy|rpp|confidentialite|legal)"
-                r"[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}",
-                content,
-                re.I,
-            )
-            if rpp_match:
+            if _has_privacy_contact_signal(content):
                 results["gamma"]["contact_signal_found"] = True
 
             # Recherche de liens vers Politique de confidentialité
@@ -279,7 +283,9 @@ async def scan(url: str, network_policy: NetworkPolicy | None = None) -> AxisRes
                     "protection",
                 )
                 if href and any(term in text.lower() for term in privacy_terms):
-                    results["gamma"]["links"].append({"text": text.strip(), "href": href})
+                    results["gamma"]["links"].append(
+                        {"text": text.strip(), "href": redact_url(href)}
+                    )
 
             if results["gamma"]["links"]:
                 results["gamma"]["privacy_link_found"] = True

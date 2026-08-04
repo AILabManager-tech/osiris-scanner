@@ -7,6 +7,7 @@ Utilisé pour éviter les appels API répétés lors de scans successifs.
 from __future__ import annotations
 
 import logging
+import threading
 import time
 from typing import Any
 
@@ -30,14 +31,19 @@ class TTLCache:
         _default_ttl: TTL par défaut en secondes.
     """
 
-    def __init__(self, default_ttl: int = 300) -> None:
+    def __init__(self, default_ttl: int = 300, max_entries: int = 1_024) -> None:
         """Initialise le cache.
 
         Args:
             default_ttl: TTL par défaut en secondes (5 minutes).
+            max_entries: Nombre maximal d'entrées conservées en mémoire.
         """
+        if max_entries < 1:
+            raise ValueError("max_entries doit être positif")
         self._store: dict[str, tuple[Any, float]] = {}
         self._default_ttl = default_ttl
+        self._max_entries = max_entries
+        self._lock = threading.RLock()
 
     def get(self, key: str) -> Any | None:
         """Récupère une valeur du cache si non expirée.
@@ -48,15 +54,16 @@ class TTLCache:
         Returns:
             Valeur mise en cache, ou None si absente/expirée.
         """
-        entry = self._store.get(key)
-        if entry is None:
-            return None
+        with self._lock:
+            entry = self._store.get(key)
+            if entry is None:
+                return None
 
-        value, expires_at = entry
-        if time.monotonic() > expires_at:
-            del self._store[key]
-            logger.debug("Cache miss (expiré) : %s", key)
-            return None
+            value, expires_at = entry
+            if time.monotonic() > expires_at:
+                self._store.pop(key, None)
+                logger.debug("Cache miss (expiré) : %s", key)
+                return None
 
         logger.debug("Cache hit : %s", key)
         return value
@@ -71,7 +78,19 @@ class TTLCache:
         """
         actual_ttl = ttl if ttl is not None else self._default_ttl
         expires_at = time.monotonic() + actual_ttl
-        self._store[key] = (value, expires_at)
+        with self._lock:
+            if key not in self._store and len(self._store) >= self._max_entries:
+                now = time.monotonic()
+                expired_keys = [
+                    existing_key
+                    for existing_key, (_, expiration) in self._store.items()
+                    if now > expiration
+                ]
+                for expired_key in expired_keys:
+                    self._store.pop(expired_key, None)
+            while key not in self._store and len(self._store) >= self._max_entries:
+                self._store.pop(next(iter(self._store)))
+            self._store[key] = (value, expires_at)
         logger.debug("Cache set : %s (TTL=%ds)", key, actual_ttl)
 
     async def get_or_set(
@@ -100,19 +119,22 @@ class TTLCache:
 
     def clear(self) -> None:
         """Vide entièrement le cache."""
-        self._store.clear()
+        with self._lock:
+            self._store.clear()
 
     def size(self) -> int:
         """Retourne le nombre d'entrées dans le cache (y compris expirées)."""
-        return len(self._store)
+        with self._lock:
+            return len(self._store)
 
     def evict_expired(self) -> int:
         """Supprime les entrées expirées. Retourne le nombre supprimé."""
         now = time.monotonic()
-        expired_keys = [k for k, (_, exp) in self._store.items() if now > exp]
-        for k in expired_keys:
-            del self._store[k]
-        return len(expired_keys)
+        with self._lock:
+            expired_keys = [k for k, (_, exp) in self._store.items() if now > exp]
+            for k in expired_keys:
+                self._store.pop(k, None)
+            return len(expired_keys)
 
 
 # Instance globale partagée par tous les axes

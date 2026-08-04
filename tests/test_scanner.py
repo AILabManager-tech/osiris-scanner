@@ -10,7 +10,7 @@ import pytest
 
 from axes import CANONICAL_AXIS_KEYS, AxisInfo
 from axes.performance import AxisResult
-from scanner import _execute_axis, execute_scan
+from scanner import _execute_axis, _invoke_deep_tool, _run_performance_multi, execute_scan
 from url_security import NetworkPolicy
 
 
@@ -155,3 +155,78 @@ async def test_controlled_redirect_is_retained_as_evidence(target_server: str) -
 
     result = await scan(f"{target_server}/redirect", policy)
     assert result.evidence[0]["redirects"] == [f"{target_server}/simple"]
+
+
+@pytest.mark.asyncio
+async def test_global_timeout_preserves_axes_that_already_completed() -> None:
+    axes = _axes_with_resource_dependency()
+    for axis in axes:
+        axis.after = ()
+
+    async def fake_invoke(axis: AxisInfo, *_args: object, **_kwargs: object) -> AxisResult:
+        await asyncio.sleep(1 if axis.key == "O" else 0.005)
+        return AxisResult(score=8.0, coverage=1.0, tool_used="fixture")
+
+    policy = NetworkPolicy(request_timeout=1.0, total_timeout=0.05)
+    with (
+        patch("scanner.validate_target_url", return_value="https://example.com/"),
+        patch("scanner._get_axes", return_value=axes),
+        patch("scanner._invoke_axis", side_effect=fake_invoke),
+    ):
+        outcome = await execute_scan("https://example.com", network_policy=policy)
+
+    assert outcome.status == "partial"
+    assert set(outcome.results) == {"S", "I", "R", "V", "L"}
+    assert outcome.errors == {"O": "Durée globale maximale dépassée"}
+    assert outcome.score is not None
+
+
+@pytest.mark.asyncio
+async def test_performance_median_preserves_raw_run_scores() -> None:
+    measurements = [
+        AxisResult(score=6.0, coverage=1.0, details={}),
+        AxisResult(score=8.0, coverage=1.0, details={}),
+    ]
+    with patch(
+        "scanner._run_single_performance",
+        new_callable=AsyncMock,
+        side_effect=measurements,
+    ):
+        result = await _run_performance_multi("https://example.com", 2)
+    assert result.score == 7.0
+    assert result.details["run_scores"] == [6.0, 8.0]
+
+
+@pytest.mark.asyncio
+async def test_deep_browser_operations_are_serialized_per_scan() -> None:
+    context: dict[str, object] = {"browser_semaphore": asyncio.Semaphore(1)}
+    active = 0
+    peak = 0
+
+    async def operation() -> AxisResult:
+        nonlocal active, peak
+        active += 1
+        peak = max(peak, active)
+        await asyncio.sleep(0.01)
+        active -= 1
+        return AxisResult(score=8.0)
+
+    await asyncio.gather(*(_invoke_deep_tool(context, operation) for _ in range(5)))
+    assert peak == 1
+
+
+@pytest.mark.asyncio
+async def test_low_coverage_is_labeled_as_insufficient_data() -> None:
+    async def fake_invoke(axis: AxisInfo, *_args: object, **_kwargs: object) -> AxisResult:
+        if axis.key != "S":
+            raise RuntimeError("outil indisponible")
+        return AxisResult(score=8.0, coverage=1.0, tool_used="fixture")
+
+    with (
+        patch("scanner.validate_target_url", return_value="https://example.com/"),
+        patch("scanner._get_axes", return_value=_axes_with_resource_dependency()),
+        patch("scanner._invoke_axis", side_effect=fake_invoke),
+    ):
+        outcome = await execute_scan("https://example.com")
+    assert outcome.coverage == 0.25
+    assert outcome.grade == "Donnée insuffisante"

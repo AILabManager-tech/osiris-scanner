@@ -22,7 +22,7 @@ from tests.conftest import first_free_port
 def web_server(monkeypatch: pytest.MonkeyPatch) -> Iterator[str]:
     monkeypatch.setattr(webapp, "STORE", webapp.JobStore())
     port = first_free_port()
-    server = webapp.ThreadingHTTPServer(("127.0.0.1", port), webapp.OsirisHandler)
+    server = webapp.BoundedThreadingHTTPServer(("127.0.0.1", port), webapp.OsirisHandler)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     try:
@@ -68,6 +68,7 @@ def test_assets_have_focus_mobile_and_safe_dom_patterns(web_server: str) -> None
     assert ":focus-visible" in css_text
     assert "@media (max-width: 720px)" in css_text
     assert "prefers-reduced-motion" in css_text
+    assert 'matchMedia("(prefers-reduced-motion: reduce)")' in js_text
     assert "textContent" in js_text
     assert "innerHTML" not in js_text
     assert 'summary.status === "partial" ? "scan partiel"' in js_text
@@ -78,6 +79,27 @@ def test_api_rejects_non_http_scheme(web_server: str) -> None:
     request = Request(
         f"{web_server}/api/scans",
         data=body,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    with pytest.raises(HTTPError) as error:
+        urlopen(request, timeout=3)  # noqa: S310 - fixture locale explicite
+    assert error.value.code == 400
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        None,
+        [],
+        {"url": "https://example.com", "mode": []},
+        {"url": "https://example.com", "profile": []},
+    ],
+)
+def test_api_rejects_non_object_or_wrongly_typed_json(web_server: str, payload: object) -> None:
+    request = Request(
+        f"{web_server}/api/scans",
+        data=json.dumps(payload).encode(),
         headers={"Content-Type": "application/json"},
         method="POST",
     )

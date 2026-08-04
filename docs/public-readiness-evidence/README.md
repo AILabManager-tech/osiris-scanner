@@ -21,8 +21,11 @@ horizontal aux tailles testées.
 
 ## Rapports réels
 
-`example-report/` vient d’un scan Docker approfondi de `https://example.com` : état `complete`,
-6/6 axes, score publié 6,8/10 et couverture 86,8 %. Les trois formats sont issus du même modèle.
+`example-report/example.com_15560114468842e1bbdba73487a362ae.*` vient du scan Docker
+approfondi post-révision de `https://example.com` : état `complete`, 6/6 axes, score publié 6,4/10
+et couverture 86,8 %. Chromium a reçu chaque réponse par le relais SSRF borné. Les trois formats
+partagent le même identifiant de scan et le même modèle en mémoire. Les fichiers
+`osiris-example-deep.*` conservent la preuve antérieure à titre de comparaison.
 
 `partial-report/` vient du même parcours avec
 `PLAYWRIGHT_BROWSERS_PATH=/tmp/osiris-browser-intentionally-unavailable` : état `partial`, six
@@ -31,6 +34,9 @@ mesures rapides de repli, score 6,2/10, couverture 68,5 % et cause technique con
 Empreintes SHA-256 :
 
 ```text
+b5bb672a26394186da5ee2a58a02fa575270dd52653cf0f4f8016f50c9bd19a6  example-report/example.com_15560114468842e1bbdba73487a362ae.json
+fdb2c94c864917c884be29560c9e9f3459544a75f5c30b583022c09b39093b2f  example-report/example.com_15560114468842e1bbdba73487a362ae.md
+491ef3769b9d864bf2e60afead88e207894d39f06fd9567bb7e4fa1868b40cec  example-report/example.com_15560114468842e1bbdba73487a362ae.pdf
 20d092998feb8b25843adf19af80aa247193dfcc65e5a120a011a321f1e6b3f5  example-report/osiris-example-deep.json
 8e974ed945853fdfed7ed0c23df31595ef400575bff66fc3ed83f4d1e677a596  example-report/osiris-example-deep.md
 48b59b6ef9c08d9911fdbe6423ca5d864dd34ed9590a796860b1822a0629deaa  example-report/osiris-example-deep.pdf
@@ -44,12 +50,12 @@ Empreintes SHA-256 :
 | Validation | Résultat exact |
 |---|---|
 | compilation Python | OK, tous les fichiers livrés |
-| pytest | 192 réussis en 19,62 s |
+| pytest | 214 réussis en 27,75 s |
 | Ruff lint + format | réussi, 0 erreur |
-| Mypy | réussi, 37 fichiers source |
+| Mypy | réussi, 39 fichiers source |
 | Bandit | réussi, 0 constat |
 | pip-audit | aucune vulnérabilité connue; paquet local OSIRIS non publié donc ignoré |
-| Radon | complexité moyenne A, 4,553; maintenabilité A sauf `scanner.py` B |
+| Radon | complexité moyenne A, 4,654; maintenabilité A sauf `scanner.py` et `webapp.py` B |
 | build Python | wheel et sdist 0.3.0 créés |
 | installation wheel vierge | imports, ressources, CLI, web et scan rapide réussis |
 | installation sdist vierge | imports et CLI réussis |
@@ -59,8 +65,8 @@ Empreintes SHA-256 :
 | benchmark rapide | 8/8 cibles, six axes, aucun échec |
 | Dockerfile | image construite depuis la base Python épinglée par digest |
 | docker-compose | configuration valide, service sain sur 25000 |
-| conteneur | UID 10001, racine en lecture seule, `no-new-privileges` |
-| scan Docker approfondi | complet, 6/6 axes, 6,8/10, couverture 86,8 % |
+| conteneur | UID 10001, racine en lecture seule, 1 GiB, 2 CPU, 256 PID, `no-new-privileges` |
+| scan Docker approfondi | complet, 6/6 axes, 6,4/10, couverture 86,8 % |
 | rapports Docker | JSON, Markdown et PDF téléchargeables |
 | interface | console propre, responsive, focus résultat, 6 axes, 3 téléchargements |
 | audit de dépendances | aucune vulnérabilité connue |

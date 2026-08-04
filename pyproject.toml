@@ -27,10 +27,11 @@ dev = [
     "pip-audit>=2.7",
     "radon>=6.0",
     "mypy>=1.0",
+    "pypdf>=5.0",
 ]
 
 [tool.setuptools.packages.find]
-include = ["axes", "axes.*", "blocklists", "osiris_web", "osiris_web.*"]
+include = ["axes", "axes.*", "blocklists", "calibration", "osiris_web", "osiris_web.*"]
 
 [tool.setuptools]
 include-package-data = true
@@ -43,17 +44,18 @@ py-modules = [
     "cache",
     "utils",
     "url_security",
-    "blocklist_updater",
     "webapp",
 ]
 
 [tool.setuptools.package-data]
 blocklists = ["*.json"]
+calibration = ["sites.txt"]
 osiris_web = ["static/*.html", "static/*.css", "static/*.js"]
 
 [project.scripts]
 osiris = "scanner:main"
 osiris-web = "webapp:main"
+osiris-calibrate = "calibrate:cli"
 
 [tool.ruff]
 target-version = "py311"

@@ -9,6 +9,7 @@ import pytest
 
 from url_security import (
     NetworkPolicy,
+    SafeHTTPResponse,
     URLSecurityError,
     guard_browser_request,
     resolve_public_host,
@@ -45,6 +46,8 @@ def test_only_http_and_https(url: str) -> None:
         "http://192.168.1.1/",
         "http://169.254.169.254/latest/meta-data/",
         "http://metadata.google.internal/",
+        "http://224.0.0.1/",
+        "http://[ff02::1]/",
     ],
 )
 def test_local_private_and_metadata_targets_are_rejected(url: str) -> None:
@@ -105,20 +108,56 @@ async def test_request_timeout_is_bounded(target_server: str) -> None:
 
 
 @pytest.mark.asyncio
-async def test_browser_guard_rechecks_dns_instead_of_caching_authorization() -> None:
+async def test_browser_guard_relays_each_request_without_direct_chromium_connection() -> None:
     route_one = AsyncMock()
     route_two = AsyncMock()
-    request = MagicMock(url="https://example.com/app.js")
+    request = MagicMock(
+        url="https://example.com/app.js",
+        method="GET",
+        headers={"Accept": "text/javascript"},
+    )
+    response = SafeHTTPResponse(
+        url="https://example.com/app.js",
+        status=200,
+        headers={"content-type": "text/javascript", "content-encoding": "gzip"},
+        body=b"console.log('ok')",
+    )
     with patch(
-        "url_security.validate_target_url",
-        side_effect=["https://example.com/app.js", URLSecurityError("rebind privé")],
-    ) as validate:
-        cache: dict[str, bool] = {}
+        "url_security.safe_fetch",
+        new_callable=AsyncMock,
+        side_effect=[response, URLSecurityError("rebind privé")],
+    ) as fetch:
+        cache: dict[str, object] = {}
         await guard_browser_request(route_one, request, NetworkPolicy(), cache)
         await guard_browser_request(route_two, request, NetworkPolicy(), cache)
-    route_one.continue_.assert_awaited_once()
+    route_one.fulfill.assert_awaited_once_with(
+        status=200,
+        headers={"content-type": "text/javascript"},
+        body=b"console.log('ok')",
+    )
+    route_one.continue_.assert_not_awaited()
     route_two.abort.assert_awaited_once_with("blockedbyclient")
-    assert validate.call_count == 2
+    assert fetch.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_browser_guard_enforces_aggregate_byte_budget() -> None:
+    route_one = AsyncMock()
+    route_two = AsyncMock()
+    request = MagicMock(url="https://example.com/a", method="GET", headers={})
+    response = SafeHTTPResponse(
+        url="https://example.com/a",
+        status=200,
+        headers={"content-type": "text/plain"},
+        body=b"1234",
+    )
+    policy = NetworkPolicy(max_response_bytes=4, max_browser_bytes=6)
+    with patch("url_security.safe_fetch", new_callable=AsyncMock, return_value=response):
+        cache: dict[str, object] = {}
+        await guard_browser_request(route_one, request, policy, cache)
+        await guard_browser_request(route_two, request, policy, cache)
+    route_one.fulfill.assert_awaited_once()
+    route_two.abort.assert_awaited_once_with("blockedbyclient")
 
 
 @pytest.mark.asyncio

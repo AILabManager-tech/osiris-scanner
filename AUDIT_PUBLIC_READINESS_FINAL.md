@@ -90,29 +90,37 @@ ne sont pas simulés. L’accessibilité de l’interface elle-même est toutefo
 - registre canonique à six axes avec somme des poids et dépendances validées;
 - suppression du partage implicite Lighthouse O→R; R mesure ses propres données;
 - scheduler déterministe par niveaux de dépendance, avec parallélisme des axes indépendants;
+- conservation immédiate des axes terminés lorsqu’un autre axe dépasse la durée globale;
+- sérialisation des navigateurs par scan afin de borner CPU et mémoire;
 - distinction `complete`, `partial` et `failed`, sans transformer une erreur d’outil en score nul;
 - repli profond→rapide documenté lorsque Playwright/Chromium manque;
+- statut global `Donnée insuffisante` sous 70 % de couverture, distinct du risque technique;
 - score technique, couverture pondérée, facteur de fiabilité et score publié bornés;
 - calibration et benchmark migrés vers le moteur commun;
 - historique SQLite migré sans perdre les colonnes historiques O/S/I/R;
-- cache et mise à jour de blocklist couverts par tests;
+- cache thread-safe et borné; mise à jour de blocklist atomique qui préserve la liste existante si
+  toutes les sources échouent;
 - intégration Observatory v2 corrigée après reproduction réelle du HTTP 415 avec aiohttp.
 
 ### Packaging
 
 - métadonnées 0.3.0 et dépendances séparées `core`, `deep` et `dev`;
-- modules racine, packages `axes`, `blocklists`, `osiris_web`, JSON et assets statiques inclus;
-- scripts `osiris` et `osiris-web` installés;
+- modules racine nécessaires, packages `axes`, `blocklists`, `calibration`, `osiris_web`, JSON,
+  liste de calibration et assets statiques inclus;
+- scripts `osiris`, `osiris-web` et `osiris-calibrate` installés;
 - wheel et sdist construits puis installés hors dépôt dans deux environnements vierges;
 - ressources et six axes vérifiés depuis le wheel installé;
 - scan rapide et trois rapports exécutés depuis ce wheel.
 
 ### Rapports et prudence juridique
 
-- `_build_report_data` est l’unique source de vérité pour JSON, Markdown, PDF et web;
+- `_build_report_data` est construit une seule fois par scan et partagé par JSON, Markdown, PDF et
+  web;
 - chaque axe contient score, couverture, statut, source, observations, preuves, risques,
   recommandations, limites et erreur éventuelle;
 - les axes manquants restent visibles avec score `null` et statut technique;
+- les replis conservent leur score observé, mais portent le statut `erreur technique` et la cause;
+- un identifiant de scan commun évite tout écrasement de rapports d’un même domaine;
 - avertissements FR et EN présents dans l’interface et tous les rapports;
 - suppression des conclusions absolues de conformité;
 - profil **Diagnostic technique Loi 25** limité à la mise en évidence de S, I, V et L, sans second
@@ -137,6 +145,9 @@ ne sont pas simulés. L’accessibilité de l’interface elle-même est toutefo
 8. La version produit est fixée à 0.3.0 et le copyright public à Auxo Systems.
 9. Les cibles de calibration/benchmark peu cohérentes avec la présentation ont été remplacées par
    W3C et Auxo Systems.
+10. Les URL conservées comme preuves sont expurgées de leurs identifiants, paramètres et fragments.
+11. Le mainteneur de blocklist reste un outil source : une installation normale ne tente pas de
+    modifier ses propres ressources de paquet.
 
 ## 6. Interface publique créée
 
@@ -149,7 +160,8 @@ Le dépôt n’avait aucune interface web utilisable. `osiris-web` fournit maint
   recommandations et limites dans l’ordre demandé;
 - téléchargements JSON, Markdown et PDF;
 - relance sans compte, cookie, analytics ni base utilisateur;
-- file bornée à quatre jobs, deux workers et corps HTTP limité à 4 KiB;
+- file bornée à quatre jobs, deux workers, 32 connexions et corps HTTP limité à 4 KiB;
+- expiration des sockets lentes après dix secondes et snapshots cohérents de l’état des jobs;
 - nettoyage des jobs et rapports expirés, puis du répertoire temporaire à la fin du processus;
 - `GET` et `HEAD`, `/health`, API de méthodologie et en-têtes de défense.
 
@@ -175,13 +187,14 @@ réduction des animations, absence de débordement et console sans erreur.
 - refus d’une réponse DNS mixte public/privé;
 - nouvelle résolution contrôlée au moment de la connexion, sans cache d’autorisation;
 - redirections manuelles revalidées, maximum cinq;
-- interception et revalidation de chaque navigation/sous-ressource Playwright;
+- interception de chaque navigation/sous-ressource Playwright et relais par `safe_fetch` : Chromium
+  ne résout ni ne contacte directement la cible;
 - service workers bloqués;
-- 30 s par requête, 180 s globales et 5 MiB par réponse;
+- 30 s par requête, 180 s globales, 5 MiB par réponse et 20 MiB par axe navigateur;
 - aucun accès `file:`, `ftp:`, `javascript:` ou implicite au système de fichiers.
 
-Les tests couvrent aussi redirection vers privé, rebinding simulé, port interdit, réponse lente,
-réponse trop grande et schéma navigateur non HTTP. Les essais live ont refusé `file:` et
+Les tests couvrent aussi redirection vers privé, rebinding simulé, multicast, port interdit,
+réponse lente, budgets de réponse/navigateur et schéma navigateur non HTTP. Les essais live ont refusé `file:` et
 `javascript:` en HTTP 400, puis l’adresse 169.254.169.254 comme cible non publique.
 
 ## 9. Fonctionnement des rapports
@@ -189,7 +202,7 @@ réponse trop grande et schéma navigateur non HTTP. Les essais live ont refusé
 Le scan Docker approfondi final de `https://example.com` a produit :
 
 - état `complete`, 6/6 axes;
-- score publié 6,8/10, score technique 7,0/10;
+- score publié 6,4/10, score technique 6,6/10;
 - couverture 86,8 %, facteur de fiabilité 0,967;
 - JSON valide, Markdown UTF-8 et PDF 1.4 de trois pages.
 
@@ -206,30 +219,31 @@ La suite couvre :
 - scoring complet, partiel, fiabilité et statuts non juridiques;
 - parité JSON/Markdown/PDF, avertissements et axes absents;
 - CLI, modes rapide/approfondi, repli, historique et migration quatre→six axes;
-- cache, blocklist et mise à jour de blocklist;
+- cache concurrent/borné, blocklist et échec total de mise à jour sans corruption;
 - serveur local : HTML simple, en-têtes faibles, traceur, JavaScript, redirections, lenteur,
   taille excessive et erreurs HTTP;
 - URL invalide, DNS inexistant, cible inaccessible, métadonnées cloud et SSRF complet;
-- ordonnanceur : parallélisme, séquençage et absence de course O/R;
-- interface, CSP, accessibilité statique, HEAD, état partiel, nettoyage temporaire et trois
+- ordonnanceur : parallélisme, séquençage, conservation sur timeout et navigateurs sérialisés;
+- interface, CSP, accessibilité statique, préférence de mouvement réduit, validation JSON, HEAD,
+  état partiel, nettoyage temporaire et trois
   téléchargements;
 - prudence juridique FR/EN et absence de conclusions absolues.
 
-Résultat final : **192 tests réussis en 19,62 secondes**.
+Résultat final : **214 tests réussis en 27,75 secondes**.
 
 ## 11. Résultats exacts des validations
 
 | Commande ou contrôle | Résultat |
 |---|---|
 | `python -m compileall` | réussi |
-| `pytest -q` | 192 réussis, 0 échec, 19,62 s |
+| `pytest -q` | 214 réussis, 0 échec, 27,75 s |
 | `ruff check .` | réussi, 0 constat |
 | `ruff format --check .` | réussi |
-| `mypy .` | réussi, 37 fichiers source |
+| `mypy .` | réussi, 39 fichiers source |
 | `bandit` sur les sources | réussi, 0 constat |
 | `pip-audit` | aucune vulnérabilité connue; paquet local non publié ignoré |
-| `radon cc` | 159 blocs, moyenne A (4,553) |
-| `radon mi` | A partout sauf `scanner.py` B |
+| `radon cc` | 156 blocs, moyenne A (4,654) |
+| `radon mi` | A partout sauf `scanner.py` et `webapp.py` B |
 | `python -m build` | wheel + sdist 0.3.0 réussis |
 | installation editable | OSIRIS 0.3.0, dépôt courant |
 | installation wheel vierge | réussie, ressources/CLI/web/scan validés |
@@ -238,11 +252,11 @@ Résultat final : **192 tests réussis en 19,62 secondes**.
 | `calibrate.py` | 5/5 sites, 0 échec, 6 axes par site |
 | benchmark rapide | 8/8 sites, 0 échec, 6 axes par site |
 | `docker compose config` | valide |
-| build Docker final | réussi, image `sha256:8dfaf3…`, 558 777 533 octets |
+| build Docker final | réussi, image `sha256:8e771728…`, 558 793 996 octets |
 | santé Docker | HTTP 200, OSIRIS 0.3.0 |
 | sécurité conteneur | UID 10001, lecture seule, `no-new-privileges` |
 | scan Docker rapide | complet, 6/6 axes |
-| scan Docker approfondi | complet, 6/6 axes, couverture 86,8 % |
+| scan Docker approfondi | complet, 6/6 axes, score 6,4/10, couverture 86,8 % |
 | GStack Browser | console propre, aucun débordement, focus résultat, 3 téléchargements |
 | recherche manuelle de secrets | aucun candidat dans l’arbre, aucun motif critique historique |
 | Gitleaks | indisponible sur la machine, donc non exécuté |
@@ -258,7 +272,8 @@ s’appliquent pas. Le JavaScript livré est un asset statique sans dépendance 
 `calibrate.py`, `blocklist_updater.py`, `axes/__init__.py`, `axes/performance.py`,
 `axes/security.py`, `axes/intrusion.py`, `axes/resource.py`, `axes/sovereignty.py`,
 `axes/legal.py`, `blocklists/__init__.py`, `calibration/sites.txt`,
-`calibration/results.json`, `benchmark/inputs/urls.txt`, `benchmark/run_benchmark.py`.
+`calibration/__init__.py`, `calibration/results.json`, `benchmark/inputs/urls.txt`,
+`benchmark/run_benchmark.py`.
 
 ### Interface, distribution et automatisation
 
@@ -275,7 +290,7 @@ Le workflow `.github/workflows/soic-gate.yml` et `scripts/update_badge.py` obsol
 `tests/test_performance.py`, `tests/test_quality_contract.py`, `tests/test_registry.py`,
 `tests/test_resource.py`, `tests/test_scanner.py`, `tests/test_scoring.py`,
 `tests/test_security.py`, `tests/test_url_security.py`, `tests/test_utils.py`,
-`tests/test_webapp.py`.
+`tests/test_webapp.py`, `tests/test_legal.py`.
 
 ### Documentation et preuves
 
@@ -314,12 +329,10 @@ Le dossier `docs/public-readiness-evidence/` contient :
 - Gitleaks n’est pas installé. La recherche de secrets a été remplacée par une recherche de motifs
   dans l’arbre et l’historique, sans candidat trouvé.
 - Python 3.11 n’est pas installé sur cette machine; la validation locale complète a été faite sous
-  Python 3.12.3. Le workflow CI configure 3.11 et 3.12, mais n’a pas été exécuté à distance puisqu’il
-  n’y a eu ni push ni ouverture de PR.
-- Le paquet GStack `review` installé référence deux fichiers absents de son bundle. Une revue
-  directe du diff et `git diff --check` ont été exécutés à la place.
-- Aucun push, déploiement, merge ou publication de paquet n’a été effectué, conformément aux
-  restrictions de la mission.
+  Python 3.12.3. Le workflow CI configure 3.11 et 3.12. Il ne se déclenche pas pour un simple push
+  de branche hors `main`; aucune PR n’a été ouverte.
+- La branche dédiée est poussée vers `origin` à la demande explicite de l’utilisateur. Aucun
+  déploiement, merge, PR ou publication de paquet n’a été effectué.
 
 Aucun de ces points ne bloque le parcours local de présentation, le moteur, les rapports ou la
 sécurité d’URL.

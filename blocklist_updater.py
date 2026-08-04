@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -144,10 +145,15 @@ def _save_blocklist(
         "domains": sorted(domains),
     }
 
-    blocklist_path.write_text(
-        json.dumps(data, indent=2, ensure_ascii=False),
-        encoding="utf-8",
-    )
+    temporary_path = blocklist_path.with_name(f".{blocklist_path.name}.{uuid.uuid4().hex}.tmp")
+    try:
+        temporary_path.write_text(
+            json.dumps(data, indent=2, ensure_ascii=False),
+            encoding="utf-8",
+        )
+        temporary_path.replace(blocklist_path)
+    finally:
+        temporary_path.unlink(missing_ok=True)
 
     return blocklist_path
 
@@ -168,6 +174,17 @@ async def update_blocklist(path: str | None = None) -> dict[str, Any]:
     disconnect_domains = await _fetch_disconnect_domains()
     easyprivacy_domains = await _fetch_easyprivacy_domains()
 
+    if not disconnect_domains and not easyprivacy_domains:
+        return {
+            "status": "failed",
+            "path": str(Path(path or BLOCKLIST_PATH)),
+            "previous_count": existing_count,
+            "new_count": 0,
+            "total_count": existing_count,
+            "sources": [],
+            "error": "Aucune source de blocklist n'a produit de données; fichier préservé.",
+        }
+
     # Merge
     merged = existing | disconnect_domains | easyprivacy_domains
     new_count = len(merged) - existing_count
@@ -181,6 +198,7 @@ async def update_blocklist(path: str | None = None) -> dict[str, Any]:
     saved_path = _save_blocklist(merged, path, sources)
 
     return {
+        "status": "updated",
         "path": str(saved_path),
         "previous_count": existing_count,
         "new_count": new_count,

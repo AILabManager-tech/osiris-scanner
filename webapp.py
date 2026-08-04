@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import copy
 import json
 import logging
 import shutil
@@ -36,6 +37,8 @@ DEFAULT_PORT_START = 25000
 DEFAULT_PORT_END = 25099
 MAX_ACTIVE_JOBS = 4
 MAX_REQUEST_BYTES = 4096
+MAX_CONNECTIONS = 32
+SOCKET_TIMEOUT_SECONDS = 10.0
 
 
 @dataclass
@@ -72,7 +75,8 @@ class JobStore:
 
     def get(self, job_id: str) -> ScanJob | None:
         with self._lock:
-            return self._jobs.get(job_id)
+            job = self._jobs.get(job_id)
+            return copy.deepcopy(job) if job is not None else None
 
     def update(self, job_id: str, **changes: Any) -> None:
         with self._lock:
@@ -156,6 +160,13 @@ def _run_job(job_id: str) -> None:
         output_dir.mkdir(parents=True, exist_ok=True)
         meta = outcome.scan_meta()
         meta["profile"] = job.profile
+        report_data = _build_report_data(
+            outcome.url,
+            outcome.results,
+            outcome.score,
+            outcome.grade,
+            meta,
+        )
         report_paths = {
             "json": generate_json_report(
                 outcome.url,
@@ -164,6 +175,7 @@ def _run_job(job_id: str) -> None:
                 outcome.grade,
                 str(output_dir),
                 meta,
+                report_data=report_data,
             ),
             "markdown": generate_markdown_report(
                 outcome.url,
@@ -172,6 +184,7 @@ def _run_job(job_id: str) -> None:
                 outcome.grade,
                 str(output_dir),
                 meta,
+                report_data=report_data,
             ),
             "pdf": generate_pdf_report(
                 outcome.url,
@@ -180,15 +193,9 @@ def _run_job(job_id: str) -> None:
                 outcome.grade,
                 str(output_dir),
                 meta,
+                report_data=report_data,
             ),
         }
-        report_data = _build_report_data(
-            outcome.url,
-            outcome.results,
-            outcome.score,
-            outcome.grade,
-            meta,
-        )
         STORE.update(
             job_id,
             status="complete",
@@ -333,13 +340,17 @@ class OsirisHandler(BaseHTTPRequestHandler):
             self._json(HTTPStatus.BAD_REQUEST, {"error": "JSON invalide"})
             return
 
+        if not isinstance(payload, dict):
+            self._json(HTTPStatus.BAD_REQUEST, {"error": "Le corps JSON doit être un objet"})
+            return
+
         url = payload.get("url")
         mode = payload.get("mode", "fast")
         profile = payload.get("profile", "general")
-        if not isinstance(url, str) or mode not in {"fast", "deep"}:
+        if not isinstance(url, str) or not isinstance(mode, str) or mode not in {"fast", "deep"}:
             self._json(HTTPStatus.BAD_REQUEST, {"error": "URL ou mode invalide"})
             return
-        if profile not in {"general", "loi25"}:
+        if not isinstance(profile, str) or profile not in {"general", "loi25"}:
             self._json(HTTPStatus.BAD_REQUEST, {"error": "Profil invalide"})
             return
         try:
@@ -354,6 +365,39 @@ class OsirisHandler(BaseHTTPRequestHandler):
 
         EXECUTOR.submit(_run_job, job.id)
         self._json(HTTPStatus.ACCEPTED, _job_payload(job))
+
+
+class BoundedThreadingHTTPServer(ThreadingHTTPServer):
+    """Serveur de démonstration borné contre les connexions lentes ou excessives."""
+
+    daemon_threads = True
+    block_on_close = False
+    request_queue_size = MAX_CONNECTIONS
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self._connection_slots = threading.BoundedSemaphore(MAX_CONNECTIONS)
+
+    def get_request(self) -> tuple[Any, Any]:
+        request, client_address = super().get_request()
+        request.settimeout(SOCKET_TIMEOUT_SECONDS)
+        return request, client_address
+
+    def process_request(self, request: Any, client_address: Any) -> None:
+        if not self._connection_slots.acquire(blocking=False):
+            self.shutdown_request(request)
+            return
+        try:
+            super().process_request(request, client_address)
+        except BaseException:
+            self._connection_slots.release()
+            raise
+
+    def process_request_thread(self, request: Any, client_address: Any) -> None:
+        try:
+            super().process_request_thread(request, client_address)
+        finally:
+            self._connection_slots.release()
 
 
 def _find_available_port(host: str, start: int, end: int) -> int:
@@ -377,7 +421,7 @@ def main() -> None:
     if args.port is not None and not 25000 <= args.port <= 25999:
         parser.error("Le port doit rester dans la plage OSIRIS 25000-25999")
     port = args.port or _find_available_port(args.host, DEFAULT_PORT_START, DEFAULT_PORT_END)
-    server = ThreadingHTTPServer((args.host, port), OsirisHandler)
+    server = BoundedThreadingHTTPServer((args.host, port), OsirisHandler)
     print(f"OSIRIS Scanner — http://{args.host}:{port}")
     try:
         server.serve_forever()

@@ -53,7 +53,7 @@ async def scan_deep(url: str, network_policy: NetworkPolicy | None = None) -> Ax
             user_agent="OSIRIS-Scanner/0.3 (Performance Signals)",
         )
         page = await context.new_page()
-        route_cache: dict[str, bool] = {}
+        route_cache: dict[str, Any] = {}
         await page.route(
             "**/*",
             lambda route, request: guard_browser_request(route, request, policy, route_cache),

@@ -125,6 +125,7 @@ def _build_report_data(
                 "score": None,
                 "weight": weights[key],
                 "status": _axis_status(None, error),
+                "error": error,
                 "coverage": 0.0,
                 "tool_used": None,
                 "observations": [],
@@ -139,19 +140,23 @@ def _build_report_data(
         recommendations = list(result.recommendations)
         if not recommendations:
             recommendations.append(_fallback_recommendation(key, result.score))
+        limitations = list(result.limitations)
+        if error and error not in limitations:
+            limitations.insert(0, error)
         axis_data = {
             "key": key,
             "label": label,
             "score": result.score,
             "weight": weights[key],
-            "status": _axis_status(result),
+            "status": _axis_status(result, error),
+            "error": error,
             "coverage": round(result.coverage, 3),
             "tool_used": result.tool_used,
             "observations": list(result.observations),
             "evidence": list(result.evidence),
             "risks": list(result.risks),
             "recommendations": recommendations,
-            "limitations": list(result.limitations),
+            "limitations": limitations,
             "details": result.details,
         }
         axes_data[key] = axis_data
@@ -207,11 +212,22 @@ def _build_report_data(
     }
 
 
-def _report_path(url: str, output_dir: str | None, suffix: str) -> Path:
+def _report_path(
+    url: str,
+    output_dir: str | None,
+    suffix: str,
+    report_data: dict[str, Any] | None = None,
+) -> Path:
     directory = Path(output_dir or REPORTS_DIR)
     directory.mkdir(parents=True, exist_ok=True)
-    date = datetime.now(UTC).strftime("%Y-%m-%d")
-    return directory / f"{extract_domain(url)}_{date}.{suffix}"
+    scan_id = str((report_data or {}).get("meta", {}).get("scan_id", ""))
+    if not re.fullmatch(r"[A-Za-z0-9_-]{8,64}", scan_id):
+        timestamp = str((report_data or {}).get("scan_date", ""))
+        scan_id = re.sub(r"[^A-Za-z0-9]+", "", timestamp)[:64]
+    if len(scan_id) < 8:
+        scan_id = datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ")
+    domain = re.sub(r"[^A-Za-z0-9.-]+", "-", extract_domain(url)).strip("-.") or "site"
+    return directory / f"{domain}_{scan_id}.{suffix}"
 
 
 def generate_json_report(
@@ -221,9 +237,11 @@ def generate_json_report(
     grade: str,
     output_dir: str | None = None,
     scan_meta: dict[str, Any] | None = None,
+    *,
+    report_data: dict[str, Any] | None = None,
 ) -> Path:
-    data = _build_report_data(url, results, osiris_score, grade, scan_meta)
-    path = _report_path(url, output_dir, "json")
+    data = report_data or _build_report_data(url, results, osiris_score, grade, scan_meta)
+    path = _report_path(url, output_dir, "json", data)
     path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
     return path
 
@@ -241,8 +259,10 @@ def generate_markdown_report(
     grade: str,
     output_dir: str | None = None,
     scan_meta: dict[str, Any] | None = None,
+    *,
+    report_data: dict[str, Any] | None = None,
 ) -> Path:
-    data = _build_report_data(url, results, osiris_score, grade, scan_meta)
+    data = report_data or _build_report_data(url, results, osiris_score, grade, scan_meta)
     summary = data["summary"]
     meta = data["meta"]
     lines = [
@@ -338,7 +358,7 @@ def generate_markdown_report(
             "",
         ]
     )
-    path = _report_path(url, output_dir, "md")
+    path = _report_path(url, output_dir, "md", data)
     path.write_text("\n".join(lines), encoding="utf-8")
     return path
 
@@ -350,6 +370,8 @@ def generate_pdf_report(
     grade: str,
     output_dir: str | None = None,
     scan_meta: dict[str, Any] | None = None,
+    *,
+    report_data: dict[str, Any] | None = None,
 ) -> Path:
     from reportlab.lib import colors
     from reportlab.lib.pagesizes import A4
@@ -357,8 +379,8 @@ def generate_pdf_report(
     from reportlab.lib.units import mm
     from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
-    data = _build_report_data(url, results, osiris_score, grade, scan_meta)
-    path = _report_path(url, output_dir, "pdf")
+    data = report_data or _build_report_data(url, results, osiris_score, grade, scan_meta)
+    path = _report_path(url, output_dir, "pdf", data)
     document = SimpleDocTemplate(
         str(path),
         pagesize=A4,
@@ -500,7 +522,24 @@ def generate_report_with_history(
 ) -> tuple[Path, Path]:
     """Compatibilité : génère JSON + Markdown sans dépendance SOIC privée."""
 
+    data = _build_report_data(url, results, osiris_score, grade, scan_meta)
     return (
-        generate_json_report(url, results, osiris_score, grade, output_dir, scan_meta),
-        generate_markdown_report(url, results, osiris_score, grade, output_dir, scan_meta),
+        generate_json_report(
+            url,
+            results,
+            osiris_score,
+            grade,
+            output_dir,
+            scan_meta,
+            report_data=data,
+        ),
+        generate_markdown_report(
+            url,
+            results,
+            osiris_score,
+            grade,
+            output_dir,
+            scan_meta,
+            report_data=data,
+        ),
     )

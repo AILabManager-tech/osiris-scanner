@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import asyncio
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -62,25 +62,22 @@ class TestAsyncRetry:
         assert call_count == 1
 
     async def test_backoff_delay(self) -> None:
-        """Verify that retries actually wait (backoff > 0)."""
-        call_times: list[float] = []
+        """Le délai initial fourni est doublé à chaque nouvelle reprise."""
+        attempts = 0
 
         @async_retry(max_retries=3, backoff=0.05)
         async def timed_failure() -> str:
-            call_times.append(asyncio.get_event_loop().time())
-            if len(call_times) < 3:
+            nonlocal attempts
+            attempts += 1
+            if attempts < 3:
                 raise RuntimeError("retry")
             return "ok"
 
-        await timed_failure()
-        assert len(call_times) == 3
-        # Between 1st and 2nd: backoff^0 = 0.05^0 = 1s? No, backoff=0.05: delay = 0.05^attempt
-        # Actually delay = backoff ** attempt: 0.05^0=1, 0.05^1=0.05
-        # Hmm, that's not what we want. Let me re-read the code...
-        # delay = backoff**attempt: attempt=0 → 1.0, attempt=1 → 0.05
-        # Actually for backoff=0.05 test purposes, any measurable delay works
-        # The point is: 2nd call happens after 1st call
-        assert call_times[1] > call_times[0]
+        sleep = AsyncMock()
+        with patch("utils.asyncio.sleep", sleep):
+            await timed_failure()
+        assert attempts == 3
+        assert [call.args[0] for call in sleep.await_args_list] == [0.05, 0.1]
 
     async def test_custom_retry_on(self) -> None:
         call_count = 0

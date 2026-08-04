@@ -6,7 +6,8 @@ import asyncio
 import logging
 import statistics
 import time
-from collections.abc import Callable
+import uuid
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -17,7 +18,12 @@ from rich.table import Table
 from axes import CANONICAL_AXIS_KEYS, AxisInfo, discover_axes, registry
 from axes.performance import AxisResult
 from history import ScanHistory
-from report import generate_json_report, generate_markdown_report, generate_pdf_report
+from report import (
+    _build_report_data,
+    generate_json_report,
+    generate_markdown_report,
+    generate_pdf_report,
+)
 from scoring import ScoreSummary, compute_score_summary, get_grade
 from url_security import NetworkPolicy, URLSecurityError, validate_target_url, validate_url_syntax
 from utils import extract_domain
@@ -56,6 +62,7 @@ class ScanOutcome:
     reliability_factor: float = 0.0
     duration_seconds: float = 0.0
     runs: int = 1
+    scan_id: str = field(default_factory=lambda: uuid.uuid4().hex)
 
     @property
     def is_partial(self) -> bool:
@@ -64,6 +71,7 @@ class ScanOutcome:
     def scan_meta(self) -> dict[str, Any]:
         return {
             "mode": self.mode,
+            "scan_id": self.scan_id,
             "runs": self.runs,
             "status": self.status,
             "duration_seconds": self.duration_seconds,
@@ -143,7 +151,8 @@ async def _run_performance_multi(
             f"Toutes les mesures performance ont échoué : {errors[-1] if errors else 'inconnu'}"
         )
 
-    median_score = round(statistics.median(result.score for result in results), 1)
+    run_scores = [result.score for result in results]
+    median_score = round(statistics.median(run_scores), 1)
     selected = min(results, key=lambda result: abs(result.score - median_score))
     selected.score = median_score
     selected.coverage = round(
@@ -155,12 +164,26 @@ async def _run_performance_multi(
         "runs_requested": runs,
         "runs_succeeded": len(results),
         "runs_failed": len(errors),
-        "run_scores": [result.score for result in results],
+        "run_scores": run_scores,
         "aggregate": "median" if runs > 1 else "single",
     }
     if errors:
         selected.limitations.append(f"{len(errors)} mesure(s) performance ont échoué.")
     return selected
+
+
+async def _invoke_deep_tool(
+    scan_context: dict[str, Any],
+    operation: Callable[[], Awaitable[AxisResult]],
+) -> AxisResult:
+    """Borne à un le nombre de navigateurs Playwright actifs pour un scan."""
+
+    semaphore = scan_context.get("browser_semaphore")
+    if not isinstance(semaphore, asyncio.Semaphore):
+        semaphore = asyncio.Semaphore(1)
+        scan_context["browser_semaphore"] = semaphore
+    async with semaphore:
+        return await operation()
 
 
 async def _invoke_axis(
@@ -179,7 +202,10 @@ async def _invoke_axis(
             from axes.performance import scan_deep as performance_scan_deep
 
             try:
-                result = await performance_scan_deep(url, network_policy)
+                result = await _invoke_deep_tool(
+                    scan_context,
+                    lambda: performance_scan_deep(url, network_policy),
+                )
             except Exception as exc:
                 if not _is_deep_tool_error(exc):
                     raise
@@ -200,7 +226,10 @@ async def _invoke_axis(
             from axes.intrusion import scan_deep as intrusion_scan_deep
 
             try:
-                return await intrusion_scan_deep(url, network_policy=network_policy)
+                return await _invoke_deep_tool(
+                    scan_context,
+                    lambda: intrusion_scan_deep(url, network_policy=network_policy),
+                )
             except Exception as exc:
                 if not _is_deep_tool_error(exc):
                     raise
@@ -216,7 +245,10 @@ async def _invoke_axis(
             from axes.resource import scan_deep as resource_scan_deep
 
             try:
-                return await resource_scan_deep(url, network_policy)
+                return await _invoke_deep_tool(
+                    scan_context,
+                    lambda: resource_scan_deep(url, network_policy),
+                )
             except Exception as exc:
                 if not _is_deep_tool_error(exc):
                     raise
@@ -238,7 +270,10 @@ async def _invoke_axis(
 
         if mode == "deep":
             try:
-                return await axis.scan_fn(url, network_policy=network_policy)
+                return await _invoke_deep_tool(
+                    scan_context,
+                    lambda: axis.scan_fn(url, network_policy=network_policy),
+                )
             except Exception as exc:
                 if not _is_deep_tool_error(exc):
                     raise
@@ -254,7 +289,10 @@ async def _invoke_axis(
 
         if mode == "deep":
             try:
-                return await axis.scan_fn(url, network_policy=network_policy)
+                return await _invoke_deep_tool(
+                    scan_context,
+                    lambda: axis.scan_fn(url, network_policy=network_policy),
+                )
             except Exception as exc:
                 if not _is_deep_tool_error(exc):
                     raise
@@ -358,7 +396,7 @@ async def execute_scan(
     completed: set[str] = set()
     results: dict[str, AxisResult] = {}
     errors: dict[str, str] = {}
-    scan_context: dict[str, Any] = {}
+    scan_context: dict[str, Any] = {"browser_semaphore": asyncio.Semaphore(1)}
 
     try:
         remaining_timeout = max(0.001, policy.total_timeout - (time.monotonic() - started))
@@ -378,8 +416,8 @@ async def execute_scan(
                     " · ".join(f"{axis.key} {axis.label}" for axis in ready),
                     progress,
                 )
-                runs_out = await asyncio.gather(
-                    *(
+                tasks = [
+                    asyncio.create_task(
                         _execute_axis(
                             axis,
                             normalized_url,
@@ -387,17 +425,25 @@ async def execute_scan(
                             runs=runs,
                             scan_context=scan_context,
                             network_policy=policy,
-                        )
-                        for axis in ready
+                        ),
+                        name=f"osiris-axis-{axis.key}",
                     )
-                )
-                for axis_run in runs_out:
-                    if axis_run.result is not None:
-                        results[axis_run.key] = axis_run.result
-                    if axis_run.error:
-                        errors[axis_run.key] = axis_run.error
-                    completed.add(axis_run.key)
-                    remaining.pop(axis_run.key, None)
+                    for axis in ready
+                ]
+                try:
+                    for completed_task in asyncio.as_completed(tasks):
+                        axis_run = await completed_task
+                        if axis_run.result is not None:
+                            results[axis_run.key] = axis_run.result
+                        if axis_run.error:
+                            errors[axis_run.key] = axis_run.error
+                        completed.add(axis_run.key)
+                        remaining.pop(axis_run.key, None)
+                finally:
+                    for task in tasks:
+                        if not task.done():
+                            task.cancel()
+                    await asyncio.gather(*tasks, return_exceptions=True)
     except TimeoutError:
         for axis_key in remaining:
             errors[axis_key] = "Durée globale maximale dépassée"
@@ -416,6 +462,10 @@ async def execute_scan(
             duration_seconds=duration,
         )
 
+    results = {key: results[key] for key in CANONICAL_AXIS_KEYS if key in results}
+    errors = {
+        key: errors[key] for key in (*CANONICAL_AXIS_KEYS, "target", "engine") if key in errors
+    }
     summary: ScoreSummary = compute_score_summary(results)
     status = "partial" if errors or summary.missing_axes else "complete"
     outcome = ScanOutcome(
@@ -427,7 +477,7 @@ async def execute_scan(
         errors=errors,
         score=summary.score,
         technical_score=summary.technical_score,
-        grade=get_grade(summary.score),
+        grade=("Donnée insuffisante" if summary.coverage < 0.7 else get_grade(summary.score)),
         coverage=summary.coverage,
         reliability_factor=summary.reliability_factor,
         duration_seconds=duration,
@@ -503,6 +553,13 @@ async def _run_scan(
 
     if output == "report":
         meta = outcome.scan_meta()
+        report_data = _build_report_data(
+            outcome.url,
+            outcome.results,
+            outcome.score,
+            outcome.grade,
+            meta,
+        )
         paths = (
             generate_json_report(
                 outcome.url,
@@ -511,6 +568,7 @@ async def _run_scan(
                 outcome.grade,
                 output_dir=output_dir,
                 scan_meta=meta,
+                report_data=report_data,
             ),
             generate_markdown_report(
                 outcome.url,
@@ -519,6 +577,7 @@ async def _run_scan(
                 outcome.grade,
                 output_dir=output_dir,
                 scan_meta=meta,
+                report_data=report_data,
             ),
             generate_pdf_report(
                 outcome.url,
@@ -527,6 +586,7 @@ async def _run_scan(
                 outcome.grade,
                 output_dir=output_dir,
                 scan_meta=meta,
+                report_data=report_data,
             ),
         )
         for path in paths:

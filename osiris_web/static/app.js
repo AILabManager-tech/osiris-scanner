@@ -9,6 +9,7 @@ const progressBar = document.querySelector("#progress-bar");
 const errorSection = document.querySelector("#error-section");
 const errorMessage = document.querySelector("#error-message");
 const resultsArticle = document.querySelector("#results");
+const scrollBehavior = window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth";
 
 const text = (tag, value, className) => {
   const node = document.createElement(tag);
@@ -126,7 +127,7 @@ function renderResult(job) {
 
   progressSection.hidden = true;
   resultsArticle.hidden = false;
-  resultsArticle.scrollIntoView({behavior: "smooth", block: "start"});
+  resultsArticle.scrollIntoView({behavior: scrollBehavior, block: "start"});
   resultsArticle.focus({preventScroll: true});
 }
 
@@ -178,7 +179,7 @@ form.addEventListener("submit", async (event) => {
 
 document.querySelector("#restart").addEventListener("click", () => {
   resultsArticle.hidden = true;
-  form.scrollIntoView({behavior: "smooth", block: "center"});
+  form.scrollIntoView({behavior: scrollBehavior, block: "center"});
   document.querySelector("#scan-url").focus();
 });
 document.querySelector("#error-retry").addEventListener("click", () => {

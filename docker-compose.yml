@@ -3,7 +3,7 @@ services:
     build:
       context: .
     ports:
-      - "25000:25000"
+      - "127.0.0.1:25000:25000"
     environment:
       PYTHONUNBUFFERED: "1"
     init: true
@@ -13,6 +13,9 @@ services:
     security_opt:
       - no-new-privileges:true
     shm_size: 512mb
+    mem_limit: 1g
+    cpus: 2.0
+    pids_limit: 256
     healthcheck:
       test:
         - CMD

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import time
+from concurrent.futures import ThreadPoolExecutor
 from unittest.mock import patch
 
 from cache import DEFAULT_TTLS, TTLCache
@@ -99,6 +100,34 @@ class TestTTLCache:
         cache.set("key", "old")
         cache.set("key", "new")
         assert cache.get("key") == "new"
+
+    def test_cache_size_is_bounded(self) -> None:
+        cache = TTLCache(max_entries=2)
+        cache.set("oldest", 1)
+        cache.set("middle", 2)
+        cache.set("newest", 3)
+        assert cache.size() == 2
+        assert cache.get("oldest") is None
+        assert cache.get("middle") == 2
+        assert cache.get("newest") == 3
+
+    def test_concurrent_access_keeps_store_consistent(self) -> None:
+        cache = TTLCache(default_ttl=60)
+
+        def exercise_cache(worker: int) -> None:
+            for index in range(500):
+                key = f"{worker}-{index % 10}"
+                cache.set(key, index)
+                assert cache.get(key) is not None
+                if index % 25 == 0:
+                    cache.evict_expired()
+
+        with ThreadPoolExecutor(max_workers=8) as executor:
+            futures = [executor.submit(exercise_cache, worker) for worker in range(8)]
+            for future in futures:
+                future.result()
+
+        assert cache.size() == 80
 
 
 class TestDefaultTTLs:

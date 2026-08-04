@@ -14,9 +14,10 @@ dist
 reports
 tests
 docs
-calibration
+calibration/results.json
 benchmark
 scripts
 arbo.md
 AUDIT_*.md
 RAPPORT_PROJET_OSIRIS.md
+/osiris_logo.png

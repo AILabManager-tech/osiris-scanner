@@ -30,6 +30,7 @@ class NetworkPolicy:
     allowed_ports: frozenset[int] | None = field(default_factory=lambda: frozenset({80, 443}))
     max_redirects: int = 5
     max_response_bytes: int = 5 * 1024 * 1024
+    max_browser_bytes: int = 20 * 1024 * 1024
     request_timeout: float = 30.0
     total_timeout: float = 180.0
 
@@ -108,6 +109,20 @@ def validate_url_syntax(url: str, policy: NetworkPolicy | None = None) -> str:
     return urlunsplit((parsed.scheme.lower(), netloc, path, parsed.query, ""))
 
 
+def redact_url(url: str) -> str:
+    """Retire les paramètres et fragments susceptibles de contenir des identifiants."""
+
+    parsed = urlsplit(url)
+    hostname = parsed.hostname or ""
+    host = f"[{hostname}]" if ":" in hostname else hostname
+    try:
+        port = parsed.port
+    except ValueError:
+        port = None
+    netloc = f"{host}:{port}" if port is not None else host
+    return urlunsplit((parsed.scheme, netloc, parsed.path or "/", "", ""))
+
+
 def _validate_ip(ip_text: str, policy: NetworkPolicy) -> str:
     """Refuse toute adresse non globale, sauf politique de test explicite."""
 
@@ -118,7 +133,7 @@ def _validate_ip(ip_text: str, policy: NetworkPolicy) -> str:
 
     if policy.allow_private:
         return str(address)
-    if not address.is_global:
+    if not address.is_global or address.is_multicast:
         raise URLSecurityError(f"Adresse réseau non publique interdite : {address}")
     return str(address)
 
@@ -253,33 +268,102 @@ async def safe_fetch(
     raise URLSecurityError("Requête interrompue avant toute réponse")
 
 
+_REQUEST_HEADERS_REMOVED = {
+    "connection",
+    "content-length",
+    "host",
+    "keep-alive",
+    "proxy-authenticate",
+    "proxy-authorization",
+    "proxy-connection",
+    "te",
+    "trailer",
+    "transfer-encoding",
+    "upgrade",
+}
+_RESPONSE_HEADERS_REMOVED = {
+    "connection",
+    "content-encoding",
+    "content-length",
+    "keep-alive",
+    "proxy-authenticate",
+    "proxy-authorization",
+    "te",
+    "trailer",
+    "transfer-encoding",
+    "upgrade",
+}
+
+
+class BrowserNetworkGuard:
+    """Relais HTTP borné : Chromium ne se connecte jamais directement à la cible."""
+
+    def __init__(self, policy: NetworkPolicy) -> None:
+        self.policy = policy
+        self.total_bytes = 0
+        self._lock = asyncio.Lock()
+
+    async def handle(self, route: Any, request: Any) -> None:
+        request_url = str(request.url)
+        scheme = urlsplit(request_url).scheme.lower()
+        if scheme in {"about", "blob", "data"}:
+            await route.continue_()
+            return
+        if scheme not in {"http", "https"}:
+            await route.abort("blockedbyclient")
+            return
+
+        method = str(getattr(request, "method", "GET")).upper()
+        if method not in {"GET", "HEAD"}:
+            await route.abort("blockedbyclient")
+            return
+        raw_headers = getattr(request, "headers", {}) or {}
+        request_headers = {
+            str(key): str(value)
+            for key, value in dict(raw_headers).items()
+            if str(key).lower() not in _REQUEST_HEADERS_REMOVED
+        }
+
+        try:
+            # La sérialisation borne la mémoire simultanée et rend le budget agrégé déterministe.
+            async with self._lock:
+                response = await safe_fetch(
+                    request_url,
+                    policy=self.policy,
+                    method=method,
+                    headers=request_headers,
+                )
+                projected_total = self.total_bytes + len(response.body)
+                if projected_total > self.policy.max_browser_bytes:
+                    raise URLSecurityError("Budget réseau du navigateur dépassé")
+                self.total_bytes = projected_total
+        except (TimeoutError, aiohttp.ClientError, URLSecurityError):
+            await route.abort("blockedbyclient")
+            return
+
+        response_headers = {
+            key: value
+            for key, value in response.headers.items()
+            if key.lower() not in _RESPONSE_HEADERS_REMOVED
+        }
+        await route.fulfill(
+            status=response.status,
+            headers=response_headers,
+            body=response.body,
+        )
+
+
 async def guard_browser_request(
     route: Any,
     request: Any,
     policy: NetworkPolicy,
-    cache: dict[str, bool] | None = None,
+    cache: dict[str, Any] | None = None,
 ) -> None:
-    """Intercepte une requête Playwright et bloque toute destination privée."""
+    """Relaye une requête Playwright via :func:`safe_fetch` avec budget agrégé."""
 
-    request_url = str(request.url)
-    scheme = urlsplit(request_url).scheme.lower()
-    if scheme in {"about", "blob", "data"}:
-        await route.continue_()
-        return
-    if scheme not in {"http", "https"}:
-        await route.abort("blockedbyclient")
-        return
-
-    # Ne pas mémoriser une autorisation DNS : chaque requête est résolue à nouveau
-    # afin qu'un rebinding ultérieur vers une adresse privée soit refusé.
-    del cache
-    try:
-        await asyncio.to_thread(validate_target_url, request_url, policy)
-        allowed = True
-    except URLSecurityError:
-        allowed = False
-
-    if allowed:
-        await route.continue_()
-    else:
-        await route.abort("blockedbyclient")
+    state = cache if cache is not None else {}
+    guard = state.get("browser_network_guard")
+    if not isinstance(guard, BrowserNetworkGuard):
+        guard = BrowserNetworkGuard(policy)
+        state["browser_network_guard"] = guard
+    await guard.handle(route, request)

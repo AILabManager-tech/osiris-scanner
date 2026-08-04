@@ -32,6 +32,24 @@ jobs:
       - run: bandit -q -r . -x ./tests
       - run: pip-audit
       - run: python -m build
+      - name: Verify built wheel in a clean environment
+        run: |
+          python -m venv /tmp/osiris-wheel
+          /tmp/osiris-wheel/bin/pip install dist/*.whl
+          cd /tmp
+          /tmp/osiris-wheel/bin/python -c "import scanner, scoring, report, history, calibrate, webapp; from importlib.resources import files; assert files('blocklists').joinpath('trackers.json').is_file(); assert files('calibration').joinpath('sites.txt').is_file(); assert files('osiris_web').joinpath('static', 'index.html').is_file()"
+          /tmp/osiris-wheel/bin/osiris --help
+          /tmp/osiris-wheel/bin/osiris-web --help
+          /tmp/osiris-wheel/bin/osiris-calibrate --help
+      - name: Verify built sdist in a clean environment
+        run: |
+          python -m venv /tmp/osiris-sdist
+          /tmp/osiris-sdist/bin/pip install dist/*.tar.gz
+          cd /tmp
+          /tmp/osiris-sdist/bin/python -c "import scanner, scoring, report, history, calibrate, webapp; from importlib.resources import files; assert files('blocklists').joinpath('trackers.json').is_file(); assert files('calibration').joinpath('sites.txt').is_file(); assert files('osiris_web').joinpath('static', 'index.html').is_file()"
+          /tmp/osiris-sdist/bin/osiris --help
+          /tmp/osiris-sdist/bin/osiris-web --help
+          /tmp/osiris-sdist/bin/osiris-calibrate --help
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: osiris-python-package

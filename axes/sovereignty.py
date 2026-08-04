@@ -19,10 +19,10 @@ from axes.performance import AxisResult
 from url_security import (
     NetworkPolicy,
     guard_browser_request,
+    redact_url,
     resolve_public_host,
     safe_fetch,
 )
-from utils import extract_domain
 
 logger = logging.getLogger("osiris")
 
@@ -238,23 +238,24 @@ async def scan(url: str, network_policy: NetworkPolicy | None = None) -> AxisRes
             service_workers="block",
         )
         page = await context.new_page()
-        route_cache: dict[str, bool] = {}
+        route_cache: dict[str, Any] = {}
         await page.route(
             "**/*",
             lambda route, request: guard_browser_request(route, request, policy, route_cache),
         )
 
         async def on_response(response):
-            """Hook d'interception des réponses pour capturer les adresses IP réelles."""
+            """Capture les destinations résolues par le même garde réseau que le navigateur."""
             try:
-                # server_addr() fournit l'IP réelle après résolution DNS/CDN
-                remote_addr = await response.server_addr()
-                if remote_addr:
-                    ip = remote_addr.get("ipAddress")
-                    if ip and ip not in flows:
-                        flow_url = response.url
-                        host = extract_domain(flow_url)
-                        flows[ip] = FlowInfo(url=flow_url, ip=ip, host=host)
+                flow_url = redact_url(response.url)
+                parsed = urlsplit(flow_url)
+                host = parsed.hostname
+                if not host:
+                    return
+                port = parsed.port or (443 if parsed.scheme == "https" else 80)
+                addresses = await asyncio.to_thread(resolve_public_host, host, port, policy)
+                for ip in addresses:
+                    flows.setdefault(ip, FlowInfo(url=flow_url, ip=ip, host=host))
             except Exception as exc:
                 logger.debug("Réponse Playwright sans adresse exploitable : %s", exc)
 
