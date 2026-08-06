@@ -44,6 +44,12 @@ Mise à jour : 2026-08-06
 - `feaabda` — qualité locale et warnings
 - `1b38e19` — packaging propre et vérification artefacts
 - `f747d30` — audit release/staging local
+- `97c04c3` — scan Gitleaks officiel ajouté à la CI et Mypy explicite
+- Checkpoint local du 2026-08-06 : `pytest -q -W error` (**219 passed**), Ruff,
+  Mypy `--explicit-package-bases`, `compileall`, `uv build --offline`,
+  `scripts/verify_package.py` et `docker compose config` passent. Le build
+  isolé `python -m build` n’est pas relancé sans accès réseau, car son
+  environnement PEP 517 tente de télécharger `setuptools`.
 - Rapport qualité : `/tmp/osiris-quality-handoff-20260806.md`
 - Rapport packaging : `/tmp/osiris-quality-handoff-20260806-packaging.md`
 - Rapport staging : `docs/RELEASE_STAGING_AUDIT.md`
