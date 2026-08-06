@@ -53,6 +53,9 @@ blocklists = ["*.json"]
 calibration = ["sites.txt"]
 osiris_web = ["static/*.html", "static/*.css", "static/*.js", "BUILD_INFO.json"]
 
+[tool.setuptools.exclude-package-data]
+"*" = ["__pycache__/*", "*.py[cod]"]
+
 [project.scripts]
 osiris = "scanner:main"
 osiris-web = "webapp:main"
