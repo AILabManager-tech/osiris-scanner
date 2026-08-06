@@ -40,6 +40,26 @@ class TargetHandler(BaseHTTPRequestHandler):
             self.send_header("Location", "/redirect-loop")
             self.end_headers()
             return
+        if self.path == "/deep":
+            tracker_url = f"http://www.google-analytics.com:{self.server.server_port}/a.js".encode()
+            body = (
+                b"<html><body><h1>Fixture OSIRIS Deep</h1>"
+                b"<p>Gerer les cookies</p>"
+                b"<button>Tout refuser</button>"
+                b'<a href="/privacy">Politique de confidentialite</a>'
+                b'<a href="mailto:privacy@example.test">Contact vie privee</a>'
+                b"<script>setTimeout(() => { const s = document.createElement('script'); "
+                b"s.src = '" + tracker_url + b"'; "
+                b"document.head.appendChild(s); }, 10)</script>"
+                b"</body></html>"
+            )
+            self.send_response(HTTPStatus.OK)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            if not head_only:
+                self.wfile.write(body)
+            return
         if self.path == "/slow":
             time.sleep(0.2)
         if self.path == "/large":
