@@ -21,6 +21,13 @@ class handler(BaseHTTPRequestHandler):  # noqa: N801
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Cache-Control", "no-store")
         self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("X-Frame-Options", "DENY")
+        self.send_header("Referrer-Policy", "no-referrer")
+        self.send_header("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+        self.send_header(
+            "Content-Security-Policy",
+            "default-src 'none'; frame-ancestors 'none'; base-uri 'none'",
+        )
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
@@ -36,6 +43,8 @@ class handler(BaseHTTPRequestHandler):  # noqa: N801
 
         try:
             payload = json.loads(self.rfile.read(length))
+            if not isinstance(payload, dict):
+                raise ValueError("Le corps JSON doit être un objet")
             url = validate_url_syntax(payload.get("url", ""))
             profile = payload.get("profile", "general")
             if profile not in {"general", "loi25"}:
