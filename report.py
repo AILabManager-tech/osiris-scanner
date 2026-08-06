@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import os
 import re
 from datetime import UTC, datetime
 from html import escape
@@ -12,6 +11,7 @@ from typing import Any
 
 from axes import CANONICAL_AXIS_KEYS, discover_axes, registry
 from axes.performance import AxisResult
+from provenance import provenance_label, resolve_provenance
 from scoring import (
     METHODOLOGY_VERSION,
     _get_weights,
@@ -32,11 +32,13 @@ LEGAL_DISCLAIMER_EN = (
 )
 
 
-def _get_git_commit() -> str | None:
-    """Lit un identifiant de build injecté, sans lancer de sous-processus."""
+def _resolved_provenance(meta: dict[str, Any]) -> dict[str, Any]:
+    """Respecte une provenance déclarée, sinon la résout localement."""
 
-    candidate = os.environ.get("OSIRIS_BUILD_COMMIT", "").strip()
-    return candidate if re.fullmatch(r"[0-9a-fA-F]{7,40}", candidate) else None
+    declared = meta.get("provenance")
+    if isinstance(declared, dict) and declared:
+        return declared
+    return resolve_provenance().to_dict()
 
 
 def _axis_status(result: AxisResult | None, error: str | None = None) -> str:
@@ -80,7 +82,7 @@ def _build_report_data(
     now = datetime.now(UTC).isoformat()
     meta: dict[str, Any] = {
         "timestamp": now,
-        "git_commit": _get_git_commit(),
+        "provenance": resolve_provenance().to_dict(),
         "mode": "fast",
         "runs": 1,
         "status": "complete" if len(results) == len(CANONICAL_AXIS_KEYS) else "partial",
@@ -90,6 +92,9 @@ def _build_report_data(
     }
     if scan_meta:
         meta.update(scan_meta)
+    provenance = _resolved_provenance(meta)
+    meta["provenance"] = provenance
+    meta["git_commit"] = provenance.get("commit_short")
 
     failed_axes = meta.get("failed_axes") or {}
     weights = _get_weights()
@@ -179,6 +184,7 @@ def _build_report_data(
         "url": url,
         "domain": extract_domain(url),
         "meta": meta,
+        "provenance": provenance,
         "summary": {
             "status": meta.get("status"),
             "score": osiris_score,
@@ -281,6 +287,8 @@ def generate_markdown_report(
         f"- Mode : **{meta.get('mode', 'fast')}**",
         f"- Axes évalués : **{summary['evaluated_axes']}/{summary['total_axes']}**",
         f"- Durée : **{meta.get('duration_seconds', 'N/D')} s**",
+        f"- Provenance : **{provenance_label(data.get('provenance'))}**",
+        f"- Build ID : **{data.get('provenance', {}).get('build_id') or 'non disponible'}**",
         "",
         "## 2. Fiabilité et couverture",
         "",
@@ -416,6 +424,15 @@ def generate_pdf_report(
         Spacer(1, 4 * mm),
         Paragraph(f"<b>URL :</b> {escape(url)}", body),
         Paragraph(f"<b>État :</b> {escape(str(data['summary']['status']))}", body),
+        Paragraph(
+            f"<b>Provenance :</b> {escape(provenance_label(data.get('provenance')))}",
+            body,
+        ),
+        Paragraph(
+            f"<b>Build ID :</b> "
+            f"{escape(str(data.get('provenance', {}).get('build_id') or 'non disponible'))}",
+            body,
+        ),
         Paragraph(
             f"<b>Score :</b> {data['summary']['score']}/10 — {escape(grade)} · "
             f"couverture {data['summary']['coverage']:.0%}",

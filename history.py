@@ -11,6 +11,8 @@ import sqlite3
 from datetime import UTC, datetime
 from typing import Any
 
+from provenance import resolve_provenance
+
 DEFAULT_DB_PATH: str = "osiris_history.db"
 
 
@@ -49,15 +51,23 @@ class ScanHistory:
                 score_v REAL,
                 score_l REAL,
                 mode TEXT DEFAULT 'fast',
+                provenance_commit TEXT,
+                provenance_json TEXT,
                 details_json TEXT
             )
         """)
         existing_columns = {
             row[1] for row in self._conn.execute("PRAGMA table_info(scans)").fetchall()
         }
-        for column in ("score_v", "score_l"):
+        migrations = {
+            "score_v": "REAL",
+            "score_l": "REAL",
+            "provenance_commit": "TEXT",
+            "provenance_json": "TEXT",
+        }
+        for column, definition in migrations.items():
             if column not in existing_columns:
-                self._conn.execute(f"ALTER TABLE scans ADD COLUMN {column} REAL")
+                self._conn.execute(f"ALTER TABLE scans ADD COLUMN {column} {definition}")
         self._conn.execute("""
             CREATE INDEX IF NOT EXISTS idx_scans_domain
             ON scans(domain, timestamp DESC)
@@ -73,6 +83,7 @@ class ScanHistory:
         scores: dict[str, float],
         mode: str = "fast",
         details: dict[str, Any] | None = None,
+        provenance: dict[str, Any] | None = None,
     ) -> int:
         """Enregistre un scan dans l'historique.
 
@@ -84,17 +95,19 @@ class ScanHistory:
             scores: Dict des scores par axe canonique (O, S, I, R, V, L).
             mode: Mode de scan (fast/deep).
             details: Détails supplémentaires (sérialisés en JSON).
+            provenance: Identité du build; résolue localement si omise.
 
         Returns:
             ID de l'enregistrement créé.
         """
         now = datetime.now(UTC).isoformat()
+        provenance = provenance or resolve_provenance().to_dict()
         cursor = self._conn.execute(
             """
             INSERT INTO scans (domain, url, timestamp, osiris_score, grade,
                                score_o, score_s, score_i, score_r, score_v, score_l,
-                               mode, details_json)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                               mode, provenance_commit, provenance_json, details_json)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 domain,
@@ -109,6 +122,8 @@ class ScanHistory:
                 scores.get("V"),
                 scores.get("L"),
                 mode,
+                provenance.get("commit") or provenance.get("build_id"),
+                json.dumps(provenance, ensure_ascii=False),
                 json.dumps(details, ensure_ascii=False) if details else None,
             ),
         )

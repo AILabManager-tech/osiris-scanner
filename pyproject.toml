@@ -40,6 +40,7 @@ py-modules = [
     "scoring",
     "report",
     "history",
+    "provenance",
     "calibrate",
     "cache",
     "utils",
@@ -50,7 +51,7 @@ py-modules = [
 [tool.setuptools.package-data]
 blocklists = ["*.json"]
 calibration = ["sites.txt"]
-osiris_web = ["static/*.html", "static/*.css", "static/*.js"]
+osiris_web = ["static/*.html", "static/*.css", "static/*.js", "BUILD_INFO.json"]
 
 [project.scripts]
 osiris = "scanner:main"
@@ -73,6 +74,7 @@ python_version = "3.11"
 ignore_missing_imports = true
 check_untyped_defs = true
 no_implicit_optional = true
+exclude = "(^|/)(build|dist|_uv|\\.venv[^/]*)/"
 
 [tool.vercel]
 entrypoint = "api.scan:handler"
