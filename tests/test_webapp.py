@@ -38,6 +38,17 @@ def _get(url: str) -> tuple[int, dict[str, str], bytes]:
         return response.status, dict(response.headers.items()), response.read()
 
 
+def _assert_bad_request(request: Request) -> None:
+    """Vérifie une réponse 400 sans laisser le flux HTTPError ouvert."""
+
+    with pytest.raises(HTTPError) as error:
+        urlopen(request, timeout=3)  # noqa: S310 - fixture locale explicite
+    try:
+        assert error.value.code == 400
+    finally:
+        error.value.close()
+
+
 def test_home_is_accessible_and_hardened(web_server: str) -> None:
     status, headers, body = _get(web_server)
     html = body.decode("utf-8")
@@ -82,9 +93,7 @@ def test_api_rejects_non_http_scheme(web_server: str) -> None:
         headers={"Content-Type": "application/json"},
         method="POST",
     )
-    with pytest.raises(HTTPError) as error:
-        urlopen(request, timeout=3)  # noqa: S310 - fixture locale explicite
-    assert error.value.code == 400
+    _assert_bad_request(request)
 
 
 @pytest.mark.parametrize(
@@ -103,9 +112,7 @@ def test_api_rejects_non_object_or_wrongly_typed_json(web_server: str, payload: 
         headers={"Content-Type": "application/json"},
         method="POST",
     )
-    with pytest.raises(HTTPError) as error:
-        urlopen(request, timeout=3)  # noqa: S310 - fixture locale explicite
-    assert error.value.code == 400
+    _assert_bad_request(request)
 
 
 def test_completed_job_exposes_same_json_markdown_pdf(
