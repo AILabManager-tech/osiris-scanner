@@ -14,6 +14,20 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  gitleaks:
+    name: Gitleaks secret scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7 # v2.3.9
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_ENABLE_COMMENTS: "false"
+          GITLEAKS_ENABLE_UPLOAD_ARTIFACT: "false"
+
   quality:
     runs-on: ubuntu-latest
     steps:
@@ -28,7 +42,7 @@ jobs:
       - run: python -m compileall -q .
       - run: ruff check .
       - run: ruff format --check .
-      - run: mypy .
+      - run: mypy --explicit-package-bases .
       - run: bandit -q -r . -x ./tests
       - run: pip-audit
       - run: python -m build

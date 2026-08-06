@@ -20,8 +20,8 @@ Mise à jour : 2026-08-06
 - [ ] Reverse proxy TLS
 - [ ] Allowlist egress en infrastructure
 - [ ] Rate limiting distribué
-- [ ] Validation Gitleaks officielle
-- [ ] Matrice Python 3.11/3.12 en CI
+- [x] Validation Gitleaks officielle — job `gitleaks` dans `.github/workflows/ci.yml`, action officielle v2.3.9 (scan CI; aucune installation locale requise)
+- [x] Matrice Python 3.11/3.12 en CI — job `tests` avec `strategy.matrix`
 
 ## Validation externe contrôlée
 
@@ -47,4 +47,4 @@ Mise à jour : 2026-08-06
 - Rapport qualité : `/tmp/osiris-quality-handoff-20260806.md`
 - Rapport packaging : `/tmp/osiris-quality-handoff-20260806-packaging.md`
 - Rapport staging : `docs/RELEASE_STAGING_AUDIT.md`
-
+- CI : `.github/workflows/ci.yml` — `quality` appelle `scripts/verify_package.py` après `python -m build`; `tests` couvre Python 3.11 et 3.12; `gitleaks` utilise l’action officielle v2.3.9.
