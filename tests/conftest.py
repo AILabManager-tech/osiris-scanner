@@ -8,6 +8,7 @@ import time
 from collections.abc import Iterator
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from typing import cast
 
 import pytest
 
@@ -41,7 +42,8 @@ class TargetHandler(BaseHTTPRequestHandler):
             self.end_headers()
             return
         if self.path == "/deep":
-            tracker_url = f"http://www.google-analytics.com:{self.server.server_port}/a.js".encode()
+            server = cast(ThreadingHTTPServer, self.server)
+            tracker_url = f"http://www.google-analytics.com:{server.server_port}/a.js".encode()
             body = (
                 b"<html><body><h1>Fixture OSIRIS Deep</h1>"
                 b"<p>Gerer les cookies</p>"

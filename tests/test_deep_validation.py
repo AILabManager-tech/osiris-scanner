@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import os
 from pathlib import Path
+from typing import Any, cast
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -25,7 +26,7 @@ async def test_controlled_deep_scan_exercises_real_axes(target_server: str) -> N
             self._context = real_async_playwright()
             self.executable: Path | None = None
 
-        async def __aenter__(self):
+        async def __aenter__(self) -> Any:
             playwright = await self._context.__aenter__()
             configured = os.environ.get("OSIRIS_PLAYWRIGHT_EXECUTABLE")
             expected = Path(configured or playwright.chromium.executable_path)
@@ -40,14 +41,14 @@ async def test_controlled_deep_scan_exercises_real_axes(target_server: str) -> N
             self.executable = candidates[-1]
             launch = playwright.chromium.launch
 
-            async def launch_local(**kwargs: object):
+            async def launch_local(**kwargs: Any) -> Any:
                 return await launch(executable_path=str(self.executable), **kwargs)
 
             playwright.chromium.launch = launch_local  # type: ignore[method-assign]
             return playwright
 
-        async def __aexit__(self, *args: object) -> bool:
-            return await self._context.__aexit__(*args)
+        async def __aexit__(self, *args: Any) -> bool | None:
+            return await cast(Any, self._context).__aexit__(*args)
 
     policy = NetworkPolicy(
         allow_private=True,
