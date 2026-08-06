@@ -54,3 +54,11 @@ Mise à jour : 2026-08-06
 - Rapport packaging : `/tmp/osiris-quality-handoff-20260806-packaging.md`
 - Rapport staging : `docs/RELEASE_STAGING_AUDIT.md`
 - CI : `.github/workflows/ci.yml` — `quality` appelle `scripts/verify_package.py` après `python -m build`; `tests` couvre Python 3.11 et 3.12; `gitleaks` utilise l’action officielle v2.3.9.
+- Deuxième checkpoint indépendant, `7c9cd87`, à partir de l'archive `osiris-scanner-v0.3.0-7c9cd8797017.tar.gz`
+  (SHA-256 `b49b40682900c5be2d04bd6d72fe5b7022231049d82e23541f051e45c3042c37`, vérifié) : `pytest -q -W error`
+  (**219 passed**), `ruff check`, `ruff format --check` (58 fichiers déjà formatés), Mypy
+  `--explicit-package-bases` (44 fichiers, aucun problème), `bandit` (aucun problème, 4303 lignes scannées),
+  `compileall`, `uv build --offline`, `scripts/verify_package.py` sur les deux artefacts et
+  `docker compose config` reproduisent tous des résultats identiques. `pip-audit` relancé (accès réseau
+  utilisé pour la base de vulnérabilités PyPI) confirme aussi l'absence de CVE connue. Aucune correction
+  requise ; aucun accès externe supplémentaire, push ni déploiement effectué.
