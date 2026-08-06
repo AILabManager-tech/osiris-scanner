@@ -33,8 +33,13 @@ Mise à jour : 2026-08-06
 
 ## Release ultime
 
-- [ ] Documentation méthodologique et release alignées
-- [ ] SBOM/checksums/signatures finales
+- [x] Documentation méthodologique et release alignées — README/DEVELOPMENT/ARCHITECTURE/METHODOLOGY/SECURITY
+  relus et confrontés au code. Un écart réel corrigé : `mypy .` (sans `--explicit-package-bases`)
+  documenté dans README.md et docs/DEVELOPMENT.md échouait réellement (`api/scan.py` : conflit de
+  module), corrigé aux deux endroits pour matcher la CI et le checkpoint. Limites documentées
+  (port 25000-25099, 4 jobs actifs, 4096 octets, 32 connexions) vérifiées identiques à `webapp.py`.
+- [ ] SBOM/checksums/signatures finales — checksums de l'archive faits ; SBOM (format/outil) et
+  signature (clé/mécanisme) restent un choix de portée non tranché, non inventé ici
 - [ ] Canary staging
 - [ ] Runbook incident, sauvegarde, rollback
 - [ ] Approbation utilisateur pour push/déploiement

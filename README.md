@@ -178,7 +178,7 @@ python -m compileall -q .
 pytest -q
 ruff check .
 ruff format --check .
-mypy .
+mypy --explicit-package-bases .
 bandit -q -r . -x ./tests
 pip-audit
 python -m build

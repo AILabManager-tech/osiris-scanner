@@ -22,7 +22,7 @@ python -m compileall -q .
 pytest -q
 ruff check .
 ruff format --check .
-mypy .
+mypy --explicit-package-bases .
 bandit -q -r . -x ./tests
 pip-audit
 radon cc . -e '.venv*,build/*,dist/*,tests/*' -s -a
