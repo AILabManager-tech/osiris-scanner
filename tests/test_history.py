@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sqlite3
 from pathlib import Path
 
 import pytest
@@ -23,14 +24,22 @@ class TestScanHistory:
             osiris_score=7.5,
             grade="Conforme",
             scores={"O": 8.0, "S": 6.0, "I": 8.0, "R": 9.0},
+            build_id="OSIRIS-test-build",
+            build_commit="6d6102db463ce9b59b951786af74fb98bf715253",
+            provenance_source="runner_env",
         )
         assert row_id > 0
 
         history = db.get_history("example.com")
         assert len(history) == 1
         assert history[0]["osiris_score"] == 7.5
-        assert history[0]["grade"] == "Conforme"
+        assert history[0]["grade"] == "Partiel"
+        assert history[0]["status_global"] == "partial"
         assert history[0]["score_o"] == 8.0
+        assert history[0]["build_id"] == "OSIRIS-test-build"
+        assert history[0]["build_commit"] == "6d6102db463ce9b59b951786af74fb98bf715253"
+        assert history[0]["provenance_source"] == "runner_env"
+        assert history[0]["provenance_status"] == "observed"
 
     def test_get_latest(self, db: ScanHistory) -> None:
         db.save_scan("example.com", "https://example.com", 6.0, "À risque", {"O": 6.0})
@@ -131,3 +140,42 @@ class TestScanHistory:
         assert len(db.get_history("a.com")) == 1
         assert len(db.get_history("b.com")) == 1
         assert len(db.get_history("c.com")) == 0
+
+    def test_legacy_database_migrates_status_and_error_columns(self, tmp_path: Path) -> None:
+        legacy_path = tmp_path / "legacy.db"
+        connection = sqlite3.connect(legacy_path)
+        connection.execute(
+            """CREATE TABLE scans (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                domain TEXT NOT NULL,
+                url TEXT NOT NULL,
+                timestamp TEXT NOT NULL,
+                osiris_score REAL NOT NULL,
+                grade TEXT NOT NULL,
+                score_o REAL,
+                score_s REAL,
+                score_i REAL,
+                score_r REAL,
+                mode TEXT DEFAULT 'fast',
+                details_json TEXT
+            )"""
+        )
+        connection.commit()
+        connection.close()
+
+        migrated = ScanHistory(str(legacy_path))
+        columns = {row["name"] for row in migrated._conn.execute("PRAGMA table_info(scans)")}
+        migrated.close()
+
+        assert {
+            "score_v",
+            "score_l",
+            "status_global",
+            "build_id",
+            "build_commit",
+            "provenance_source",
+            "provenance_status",
+            "timeouts",
+            "missing_axes_json",
+            "axis_errors_json",
+        } <= columns

@@ -181,3 +181,12 @@ class TestComputePartialScore:
         # Un seul axe → poids normalisé à 1.0 dans les deux cas, même pénalité
         # fiabilité (1/6 axes) : les deux scores sont égaux.
         assert score_s >= score_o
+
+    def test_unknown_axis_does_not_inflate_partial_reliability(self) -> None:
+        recognized = {"O": AxisResult(score=8.0, tool_used="test")}
+        contaminated = {
+            **recognized,
+            "X": AxisResult(score=10.0, tool_used="contaminant"),
+        }
+
+        assert compute_partial_score(contaminated) == compute_partial_score(recognized)

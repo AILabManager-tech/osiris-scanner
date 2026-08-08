@@ -12,6 +12,8 @@ import logging
 import re
 import statistics
 import time
+from dataclasses import asdict, dataclass
+from datetime import UTC, datetime
 
 import click
 from rich.console import Console
@@ -20,8 +22,19 @@ from rich.table import Table
 from axes import discover_axes, registry
 from axes.performance import AxisResult
 from history import ScanHistory
-from report import generate_json_report, generate_markdown_report
-from scoring import compute_osiris_score, get_grade
+from report import (
+    generate_json_report,
+    generate_markdown_report,
+    generate_pdf_report,
+    resolve_build_provenance,
+)
+from scoring import (
+    ScanStatus,
+    compute_osiris_score,
+    get_grade,
+    get_scan_status,
+    get_status_grade,
+)
 from utils import extract_domain
 
 console = Console()
@@ -37,6 +50,33 @@ URL_PATTERN = re.compile(
 
 # Découverte automatique des axes via le registre de plugins
 discover_axes()
+
+
+@dataclass(frozen=True)
+class AxisFailure:
+    """Échec structuré d'un axe, conservé jusqu'aux rapports."""
+
+    axis: str
+    label: str
+    error_type: str
+    message: str
+    kind: str = "error"
+
+    def to_dict(self) -> dict[str, str]:
+        return asdict(self)
+
+
+def _failure_from_exception(axis: str, label: str, error: BaseException) -> AxisFailure:
+    """Classe un échec sans confondre exception, timeout et résultat absent."""
+    message = str(error)
+    is_timeout = isinstance(error, TimeoutError) or "timeout" in message.lower()
+    return AxisFailure(
+        axis=axis,
+        label=label,
+        error_type=type(error).__name__,
+        message=message,
+        kind="timeout" if is_timeout else "error",
+    )
 
 
 def _get_axes() -> list[tuple[str, str, object, str, tuple[type[Exception], ...]]]:
@@ -147,8 +187,8 @@ async def _scan_axis(
     runs: int = 1,
     mode: str = "fast",
     scan_context: dict | None = None,
-) -> AxisResult | None:
-    """Scan a single axis, returning None on failure instead of crashing."""
+) -> AxisResult | AxisFailure:
+    """Scanne un axe et conserve un échec structuré au lieu de retourner None."""
     if scan_context is None:
         scan_context = {}
     scan_labels = _get_scan_labels()
@@ -175,6 +215,14 @@ async def _scan_axis(
                 result = await scan_resource_fn(url, scan_context=scan_context)
         else:
             result = await scan_fn(url)
+        if result is None:
+            return AxisFailure(
+                axis=axis_key,
+                label=axis_label,
+                error_type="MissingResult",
+                message="L'axe n'a retourné aucun résultat",
+                kind="missing_result",
+            )
         elapsed = time.monotonic() - t0
         logger.debug("Axe %s terminé en %.1fs — score=%.1f", axis_key, elapsed, result.score)
         _display_result(axis_key, axis_label, result)
@@ -183,7 +231,7 @@ async def _scan_axis(
         elapsed = time.monotonic() - t0
         logger.debug("Axe %s échoué en %.1fs : %s", axis_key, elapsed, e)
         console.print(f"[red]ERREUR {axis_label}[/red] : {e}")
-        return None
+        return _failure_from_exception(axis_key, axis_label, e)
 
 
 async def _run_scan(
@@ -193,7 +241,7 @@ async def _run_scan(
     history: bool = False,
     runs: int = 1,
     mode: str = "fast",
-) -> None:
+) -> ScanStatus:
     """Exécute le scan OSIRIS sur une URL."""
     console.print(f"\n[bold]OSIRIS Scanner[/bold] — Analyse de {url}")
     if mode == "deep":
@@ -201,8 +249,9 @@ async def _run_scan(
     console.print()
 
     results: dict[str, AxisResult] = {}
-    failed_axes: list[str] = []
+    axis_failures: dict[str, AxisFailure] = {}
     scan_context: dict = {}
+    provenance = resolve_build_provenance()
 
     # Lancer les axes en parallèle (asyncio.gather) — découverts via le registre
     axes = _get_axes()
@@ -215,21 +264,33 @@ async def _run_scan(
     for (axis_key, axis_label, *_rest), result in zip(axes, axis_results, strict=True):
         if isinstance(result, BaseException):
             console.print(f"[red]ERREUR inattendue {axis_label}[/red] : {result}")
-            failed_axes.append(axis_key)
-        elif result is not None:
+            axis_failures[axis_key] = _failure_from_exception(axis_key, axis_label, result)
+        elif isinstance(result, AxisResult):
             results[axis_key] = result
+        elif isinstance(result, AxisFailure):
+            axis_failures[axis_key] = result
         else:
-            failed_axes.append(axis_key)
+            axis_failures[axis_key] = AxisFailure(
+                axis=axis_key,
+                label=axis_label,
+                error_type="MissingResult",
+                message="L'axe n'a retourné ni résultat ni exception",
+                kind="missing_result",
+            )
 
-    if failed_axes:
+    failed_axes = list(axis_failures)
+    if axis_failures:
         console.print(f"\n[yellow]Axes en échec : {', '.join(failed_axes)}[/yellow]")
         if not results:
             console.print("\n[red]Aucun axe n'a réussi. Scan avorté.[/red]\n")
-            return
 
-    osiris_score = compute_osiris_score(results)
-    is_partial = len(results) < len(axes)
-    grade = get_grade(osiris_score)
+    expected_axes = [axis[0] for axis in axes]
+    status = get_scan_status(results, expected_axes)
+    osiris_score = compute_osiris_score(results) if results else 0.0
+    score_grade = get_grade(osiris_score)
+    grade = get_status_grade(status, score_grade)
+    timeouts = sum(failure.kind == "timeout" for failure in axis_failures.values())
+    errors = {key: failure.to_dict() for key, failure in axis_failures.items()}
 
     # Summary table
     console.print()
@@ -244,14 +305,30 @@ async def _run_scan(
             table.add_row(f"{axis_key} — {axis_label}", f"{r.score}/10", weight, r.tool_used)
     console.print(table)
 
-    partial_label = f" (partiel, {len(results)}/{len(axes)} axes)" if is_partial else ""
-    console.print(f"\n[bold]Score OSIRIS : {osiris_score}/10 ({grade}){partial_label}[/bold]\n")
+    status_label = "" if status == "complete" else f" ({status}, {len(results)}/{len(axes)} axes)"
+    console.print(f"\n[bold]Score OSIRIS : {osiris_score}/10 ({grade}){status_label}[/bold]\n")
 
     # Persistance locale (history.py — toujours disponible)
     domain = extract_domain(url)
     axis_scores = {k: r.score for k, r in results.items()}
     scan_history = ScanHistory()
-    scan_history.save_scan(domain, url, osiris_score, grade, axis_scores, mode=mode)
+    scan_history.save_scan(
+        domain,
+        url,
+        osiris_score,
+        grade,
+        axis_scores,
+        mode=mode,
+        details={"axis_errors": errors, "missing_axes": failed_axes},
+        status_global=status,
+        timeouts=timeouts,
+        missing_axes=failed_axes,
+        axis_errors=errors,
+        build_id=provenance["build_id"],
+        build_commit=provenance["build_commit"],
+        provenance_source=provenance["source"] or "unavailable",
+        provenance_status=provenance["status"],
+    )
 
     delta = scan_history.get_delta(domain)
     if delta:
@@ -272,34 +349,52 @@ async def _run_scan(
         from soic.osiris_adapter import save_osiris_scan
         from soic.persistence import RunStore
 
-        store = RunStore()
-        save_osiris_scan(url, results, osiris_score, grade, store)
+        if results:
+            store = RunStore()
+            save_osiris_scan(url, results, osiris_score, grade, store)
     except ImportError:
         pass
 
     # Reports
     if output == "report":
         scan_meta = {
+            "timestamp": datetime.now(UTC).isoformat(),
             "mode": mode,
             "runs": runs,
-            "timeouts": len(failed_axes),
+            "timeouts": timeouts,
+            "status_global": status,
+            "expected_axes": expected_axes,
+            "missing_axes": failed_axes,
+            "axis_errors": errors,
+            "build_id": provenance["build_id"],
+            "build_commit": provenance["build_commit"],
+            "provenance_source": provenance["source"],
+            "provenance_status": provenance["status"],
         }
         json_path = generate_json_report(
             url,
             results,
             osiris_score,
-            grade,
+            score_grade,
             scan_meta=scan_meta,
         )
         md_path = generate_markdown_report(
             url,
             results,
             osiris_score,
-            grade,
+            score_grade,
+            scan_meta=scan_meta,
+        )
+        pdf_path = generate_pdf_report(
+            url,
+            results,
+            osiris_score,
+            score_grade,
             scan_meta=scan_meta,
         )
         console.print(f"[green]Rapport JSON[/green] : {json_path}")
         console.print(f"[green]Rapport Markdown[/green] : {md_path}")
+        console.print(f"[green]Rapport PDF[/green] : {pdf_path}")
 
     # History display
     if history:
@@ -319,6 +414,8 @@ async def _run_scan(
                     entry.get("timestamp", "?")[:19],
                 )
             console.print(hist_table)
+
+    return status
 
 
 def _setup_logging(verbose: bool) -> None:
@@ -352,7 +449,9 @@ def main(url: str, output: str | None, history: bool, runs: int, mode: str, verb
     """OSIRIS — Score composite de santé opérationnelle d'un site web."""
     _setup_logging(verbose)
     validated_url = _validate_url(url)
-    asyncio.run(_run_scan(validated_url, output, history=history, runs=runs, mode=mode))
+    status = asyncio.run(_run_scan(validated_url, output, history=history, runs=runs, mode=mode))
+    if status == "failed":
+        raise click.exceptions.Exit(1)
 
 
 if __name__ == "__main__":

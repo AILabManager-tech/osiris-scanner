@@ -2,7 +2,13 @@
 
 from __future__ import annotations
 
+import subprocess
+import sys
+
+import pytest
+
 from axes import AxisRegistry, discover_axes, registry
+from scoring import _get_weights
 
 
 class TestAxisRegistry:
@@ -140,3 +146,58 @@ class TestDiscoverAxes:
             assert info.scan_fn is not None
             assert info.scan_label
             assert callable(info.scan_fn)
+
+    def test_partial_import_is_restored_in_fresh_process(self) -> None:
+        """Un registre ayant perdu cinq entrées retrouve les six axes canoniques."""
+        code = (
+            "import axes, axes.performance; "
+            "o = axes.registry.get('O'); "
+            "axes.registry._axes = {'O': o}; "
+            "axes.discover_axes(); "
+            "assert set(axes.registry.keys()) == set('OSIRVL'); "
+            "assert abs(sum(axes.registry.weights().values()) - 1.0) < 1e-9"
+        )
+        result = subprocess.run(
+            [sys.executable, "-c", code],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert result.returncode == 0, result.stderr
+
+    def test_partial_global_registry_cannot_replace_canonical_weights(
+        self,
+    ) -> None:
+        code = (
+            "import axes, axes.performance; "
+            "o = axes.registry.get('O'); "
+            "axes.registry._axes = {'O': o}; "
+            "from scoring import _get_weights; "
+            "weights = _get_weights(); "
+            "assert set(weights) == set('OSIRVL'); "
+            "assert abs(sum(weights.values()) - 1.0) < 1e-9"
+        )
+        result = subprocess.run(
+            [sys.executable, "-c", code],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert result.returncode == 0, result.stderr
+
+    def test_contaminated_global_registry_falls_back_to_canonical_weights(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        contaminated = dict(registry._axes)
+        monkeypatch.setattr(registry, "_axes", contaminated)
+
+        @registry.register("X", label="Contaminant", weight=0.5)
+        async def scan_x(_url: str) -> None:
+            return None
+
+        weights = _get_weights()
+
+        assert set(weights) == set("OSIRVL")
+        assert "X" not in weights
+        assert sum(weights.values()) == pytest.approx(1.0)

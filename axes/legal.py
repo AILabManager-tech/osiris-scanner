@@ -73,6 +73,55 @@ REFUSE_PATTERNS = [
     "pas maintenant",
 ]
 
+ACCEPT_PATTERNS = [
+    "tout accepter",
+    "accepter",
+    "accept all",
+    "accept",
+    "allow all",
+]
+
+
+def _refusal_selectors(pattern: str) -> tuple[str, ...]:
+    """Retourne uniquement les contrôles pouvant porter un refus explicite."""
+    return (
+        f"button:has-text('{pattern}')",
+        f"a:has-text('{pattern}')",
+    )
+
+
+def _acceptance_selectors(pattern: str) -> tuple[str, ...]:
+    """Retourne les contrôles actionnables d'acceptation explicite."""
+    return (
+        f"button:has-text('{pattern}')",
+        f"a:has-text('{pattern}')",
+    )
+
+
+def _is_privacy_policy_link(text: str, href: str | None) -> bool:
+    """Ignore les contacts mailto, même si leur libellé contient « protection »."""
+    if not href or href.lower().startswith("mailto:"):
+        return False
+    privacy_keywords = ["confidentialité", "privacy", "vie privée", "protection"]
+    return any(keyword in text.casefold() for keyword in privacy_keywords)
+
+
+async def _find_visible_control(
+    page: Any,
+    patterns: list[str],
+    selector_factory: Any,
+) -> tuple[Any | None, str | None, str | None]:
+    """Trouve le premier contrôle visible et conserve le pattern et le sélecteur."""
+    for pattern in patterns:
+        for selector in selector_factory(pattern):
+            try:
+                handle = await page.query_selector(selector)
+                if handle and await handle.is_visible():
+                    return handle, pattern, selector
+            except Exception:
+                continue
+    return None, None, None
+
 
 # =============================================================================
 # Évaluateurs par règle — prédicat pass/fail à partir de l'observation brute.
@@ -147,6 +196,89 @@ async def _is_tracker(url: str) -> bool:
     return any(domain == tracker or domain.endswith(f".{tracker}") for tracker in TRACKER_DOMAINS)
 
 
+def _empty_acceptance_branch() -> dict[str, Any]:
+    """Structure explicite de la branche technique d'acceptation."""
+    return {
+        "status": "indeterminate",
+        "before": {
+            "trackers": [],
+            "accept_button_found": False,
+            "accept_pattern": None,
+            "accept_selector": None,
+        },
+        "action": {
+            "attempted": False,
+            "performed": False,
+            "error": None,
+        },
+        "after": {"trackers": []},
+    }
+
+
+async def _observe_acceptance(browser: Any, url: str) -> dict[str, Any]:
+    """Observe l'acceptation dans un contexte isolé, sans produire de verdict."""
+    branch = _empty_acceptance_branch()
+    context = None
+    try:
+        context = await browser.new_context(user_agent="OSIRIS-Scanner/5.0 (Legal Audit)")
+        page = await context.new_page()
+        trackers_before: list[str] = []
+
+        async def on_request_before(request: Any) -> None:
+            if await _is_tracker(request.url):
+                trackers_before.append(request.url)
+
+        page.on("request", on_request_before)
+        await page.goto(url, wait_until="networkidle", timeout=45000)
+        await page.wait_for_timeout(2000)
+        branch["before"]["trackers"] = sorted(set(trackers_before))
+
+        accept_button, pattern, selector = await _find_visible_control(
+            page,
+            ACCEPT_PATTERNS,
+            _acceptance_selectors,
+        )
+        branch["before"]["accept_button_found"] = accept_button is not None
+        branch["before"]["accept_pattern"] = pattern
+        branch["before"]["accept_selector"] = selector
+        if accept_button is None:
+            branch["status"] = "not_observed"
+            return branch
+
+        page.remove_listener("request", on_request_before)
+        trackers_after: list[str] = []
+
+        async def on_request_after(request: Any) -> None:
+            if await _is_tracker(request.url):
+                trackers_after.append(request.url)
+
+        page.on("request", on_request_after)
+        branch["action"]["attempted"] = True
+        try:
+            await accept_button.click()
+            branch["action"]["performed"] = True
+            await page.wait_for_timeout(3000)
+        except Exception as error:
+            branch["action"]["error"] = {
+                "error_type": type(error).__name__,
+                "message": str(error),
+            }
+            return branch
+
+        branch["after"]["trackers"] = sorted(set(trackers_after))
+        branch["status"] = "observed"
+        return branch
+    except Exception as error:
+        branch["action"]["error"] = {
+            "error_type": type(error).__name__,
+            "message": str(error),
+        }
+        return branch
+    finally:
+        if context is not None:
+            await context.close()
+
+
 async def _observe(url: str) -> dict[str, Any]:
     """Capture les faits bruts du site (l'observation, pas le verdict).
 
@@ -162,6 +294,7 @@ async def _observe(url: str) -> dict[str, Any]:
         "rpp_found": False,
         "rpp_evidence": None,
         "privacy_policy_links": [],
+        "acceptance_branch": _empty_acceptance_branch(),
     }
 
     async with async_playwright() as p:
@@ -185,25 +318,14 @@ async def _observe(url: str) -> dict[str, Any]:
             observation["trackers_pre_consent"] = list(set(captured_trackers))
 
             # --- Phase Beta : Simulation de Refus ---
-            refuse_button = None
-            for pattern in REFUSE_PATTERNS:
-                selectors = [
-                    f"button:has-text('{pattern}')",
-                    f"a:has-text('{pattern}')",
-                    f"span:has-text('{pattern}')",
-                ]
-                for sel in selectors:
-                    try:
-                        handle = await page.query_selector(sel)
-                        if handle and await handle.is_visible():
-                            refuse_button = handle
-                            observation["refuse_pattern"] = pattern
-                            logger.debug("Bouton de refus trouvé via pattern : %s", pattern)
-                            break
-                    except Exception:
-                        continue
-                if refuse_button:
-                    break
+            refuse_button, refuse_pattern, _refuse_selector = await _find_visible_control(
+                page,
+                REFUSE_PATTERNS,
+                _refusal_selectors,
+            )
+            if refuse_button:
+                observation["refuse_pattern"] = refuse_pattern
+                logger.debug("Bouton de refus trouvé via pattern : %s", refuse_pattern)
 
             if refuse_button:
                 observation["refuse_button_found"] = True
@@ -236,19 +358,19 @@ async def _observe(url: str) -> dict[str, Any]:
 
             # Liens vers une politique de confidentialité
             links = await page.query_selector_all("a")
-            privacy_keywords = ["confidentialité", "privacy", "vie privée", "protection"]
             for link in links:
                 href = await link.get_attribute("href")
                 text = await link.inner_text()
-                if href and any(p in text.lower() for p in privacy_keywords):
-                    observation["privacy_policy_links"].append(
-                        {"text": text.strip(), "href": href}
-                    )
+                if _is_privacy_policy_link(text, href):
+                    observation["privacy_policy_links"].append({"text": text.strip(), "href": href})
 
         except Exception as e:
             logger.error("Erreur durant l'observation Loi 25 : %s", e)
         finally:
-            await browser.close()
+            await context.close()
+
+        observation["acceptance_branch"] = await _observe_acceptance(browser, url)
+        await browser.close()
 
     return observation
 
@@ -266,11 +388,20 @@ async def scan(url: str) -> AxisResult:
     ruleset = _get_ruleset()
     observation = await _observe(url)
     audit = evaluate(ruleset, observation, EVALUATORS)
+    acceptance_branch = observation.get("acceptance_branch", _empty_acceptance_branch())
 
     return AxisResult(
         score=audit.score,
         details={
             "observation": observation,
+            "technical_observation": {"acceptance_branch": acceptance_branch},
+            "legal_status": {
+                "acceptance_branch": "not_assessed",
+                "reason": (
+                    "La branche d'acceptation est un signal technique et n'alimente "
+                    "ni le verdict juridique ni le score."
+                ),
+            },
             "audit": audit.to_dict(),
             "statut": audit.statut_lisible,
             "citations_completes": audit.citations_completes,

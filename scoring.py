@@ -18,6 +18,8 @@ from __future__ import annotations
 
 import logging
 import math
+from collections.abc import Iterable
+from typing import Literal
 
 from axes.performance import AxisResult
 
@@ -41,17 +43,82 @@ _DEFAULT_WEIGHTS: dict[str, float] = {
     "L": WEIGHT_LEGAL,
 }
 
+ScanStatus = Literal["complete", "partial", "failed", "indeterminate"]
+
 
 def _get_weights() -> dict[str, float]:
-    """Retourne les poids depuis le registre de plugins si disponible."""
-    try:
-        from axes import registry
+    """Retourne un jeu de poids complet et normalisé.
 
-        if len(registry) > 0:
-            return registry.weights()
-    except ImportError:
+    Un import direct d'un seul module d'axe peuple partiellement le registre.
+    Ce registre incomplet ne doit jamais remplacer silencieusement les six poids
+    canoniques utilisés par la formule OSIRIS.
+    """
+    try:
+        from axes import discover_axes, registry
+
+        registered = registry.weights()
+        complete = set(registered) == set(_DEFAULT_WEIGHTS)
+        valid_values = all(math.isfinite(weight) and weight > 0 for weight in registered.values())
+        normalized = math.isclose(sum(registered.values()), 1.0, abs_tol=1e-9)
+        if not (complete and valid_values and normalized):
+            discover_axes()
+            registered = registry.weights()
+            complete = set(registered) == set(_DEFAULT_WEIGHTS)
+            valid_values = all(
+                math.isfinite(weight) and weight > 0 for weight in registered.values()
+            )
+            normalized = math.isclose(sum(registered.values()), 1.0, abs_tol=1e-9)
+        if complete and valid_values and normalized:
+            return registered
+        if registered:
+            logger.warning(
+                "Registre d'axes incomplet ou incohérent (%s); utilisation des poids canoniques",
+                sorted(registered),
+            )
+    except (ImportError, RuntimeError):
         pass
-    return _DEFAULT_WEIGHTS
+    return dict(_DEFAULT_WEIGHTS)
+
+
+def _legal_is_indeterminate(result: AxisResult | None) -> bool:
+    """Détecte l'absence de conclusion légale dans les détails structurés."""
+    if result is None:
+        return False
+    details = result.details or {}
+    audit = details.get("audit")
+    statuses = [details.get("statut"), details.get("status")]
+    if isinstance(audit, dict):
+        statuses.extend((audit.get("statut"), audit.get("status")))
+        if audit.get("conforme") is None and "conforme" in audit:
+            return True
+    return any(status in {"indetermine", "indeterminate"} for status in statuses)
+
+
+def get_scan_status(
+    results: dict[str, AxisResult],
+    expected_axes: Iterable[str] | None = None,
+) -> ScanStatus:
+    """Retourne le statut global sans modifier le calcul du score."""
+    expected = set(expected_axes or _DEFAULT_WEIGHTS)
+    present = set(results)
+    if not present:
+        return "failed"
+    if expected - present:
+        return "partial"
+    if _legal_is_indeterminate(results.get("L")):
+        return "indeterminate"
+    return "complete"
+
+
+def get_status_grade(status: ScanStatus, score_grade: str) -> str:
+    """Empêche un statut incomplet d'être présenté comme un grade normal."""
+    if status == "complete":
+        return score_grade
+    return {
+        "partial": "Partiel",
+        "failed": "Échec",
+        "indeterminate": "Indéterminé",
+    }[status]
 
 
 # --- Seuils de grade ---
@@ -132,8 +199,11 @@ def compute_partial_score(results: dict[str, AxisResult]) -> float:
 
     normalized_score = math.exp(weighted_ln_sum)
 
-    # Pénalité de fiabilité : (n_available / total) ^ 0.5
-    reliability = (len(results) / len(weights)) ** 0.5
+    # Pénalité de fiabilité : seuls les axes reconnus comptent. Un résultat
+    # injecté par un registre contaminé ne doit pas augmenter artificiellement
+    # la couverture ni le score.
+    recognized_axes = sum(axis in weights for axis in results)
+    reliability = (recognized_axes / len(weights)) ** 0.5
     return round(normalized_score * reliability, 1)
 
 

@@ -1,0 +1,323 @@
+meta:
+  title: Revalidation indépendante du ruleset Loi 25 d’OSIRIS
+  date: '2026-08-05'
+  audited_scope:
+    repository: AILabManager-tech/osiris-scanner
+    branch: backup/full-sync-2026-07-17
+    commit: 6d6102db463ce9b59b951786af74fb98bf715253
+    file: rulesets/loi25.ruleset.yaml
+    actual_rule_count: 5
+  normative_source:
+    name: Loi sur la protection des renseignements personnels dans le secteur privé
+    citation: RLRQ c. P-39.1
+    official_url: https://www.legisquebec.gouv.qc.ca/fr/document/lc/P-39.1/
+    official_text_date: '2026-04-01'
+  explanatory_sources:
+    - name: CAI - Principaux changements de la Loi 25
+      role: explanation_only
+      url: https://www.cai.gouv.qc.ca/protection-renseignements-personnels/sujets-et-domaines-dinteret/principaux-changements-loi-25
+    - name: CAI - Lignes directrices 2023-1 sur le consentement
+      role: explanation_only
+      url: https://www.cai.gouv.qc.ca/uploads/pdfs/CAI_Criteres_Validite_Consentement.pdf
+  global_legal_conclusion_from_url_only: prohibited
+  note: Ce fichier est une matrice de validation, pas un ruleset exécutable de remplacement.
+
+schema:
+  rule_result:
+    technical_observation: Fait capturé ou anomalie technique, borné au périmètre testé.
+    legal_status: Statut juridique ou d’applicabilité; peut rester indéterminé.
+    rule_result_note: Ces deux champs sont orthogonaux et ne doivent jamais être fusionnés en un verdict unique.
+  expected_outcomes_note: Les listes expected_outcomes décrivent des combinaisons possibles; elles ne constituent pas un enum exécutable.
+
+verdicts:
+  FAIT_OBSERVE: Élément public ou technique capturé sans qualification juridique.
+  CONTROLE_TECHNIQUE_OBSERVE: Comportement favorable observé dans la session testée seulement.
+  ANOMALIE_TECHNIQUE: Comportement à analyser; ne constitue pas automatiquement une violation.
+  ECART_PUBLIC_APPARENT: Élément expressément public non trouvé après crawl suffisamment complet.
+  INDETERMINE_SOURCE: Fondement normatif absent, provisoire ou non vérifié.
+  INDETERMINE_APPLICABILITE: Applicabilité de l’obligation non établie.
+  INDETERMINE_SCAN: Couverture ou preuve technique insuffisante.
+  INDETERMINE_INTERNE: Preuve organisationnelle, contractuelle ou opérationnelle interne requise.
+  INDETERMINE_JURIDIQUE: Qualification ou appréciation juridique requise.
+
+invariants:
+  - Une source TODO produit toujours INDETERMINE_SOURCE, même si le fait observé paraît défavorable.
+  - Une observation brute est conservée séparément du verdict juridique.
+  - Un scan URL-only ne produit jamais CONFORME_LOI25.
+  - Une absence sur une seule page ne produit jamais ECART_PUBLIC_APPARENT.
+  - Une correspondance de blocklist n’est pas une preuve de renseignement personnel, de profilage ou de consentement requis.
+  - Une destination réseau étrangère n’est pas une preuve de communication de renseignements personnels hors Québec.
+
+rules:
+  - id: loi25-traceurs-pre-consentement
+    current_rule_classification: overbroad_technical_signal_not_autonomous_legal_rule
+    official_articles:
+      - '8.1'
+      - '14'
+    source_url: https://www.legisquebec.gouv.qc.ca/fr/document/lc/P-39.1/
+    source_verified_at: '2026-08-05'
+    exact_obligation: >-
+      Si une collecte de renseignements personnels recourt à une technologie permettant
+      d’identifier, de localiser ou de profiler, la personne doit être informée au préalable
+      du recours à cette technologie et des moyens offerts pour activer ces fonctions.
+      Lorsqu’un consentement est prévu par la loi, il doit respecter les critères de l’article 14.
+      P-39.1 ne formule pas une interdiction générale de tout cookie ou traceur dit non essentiel.
+    observable_by_osiris:
+      - requête vers un domaine de blocklist avant interaction
+      - URL, domaine, type de ressource, horodatage et état du navigateur
+    internal_information_required:
+      - finalité du service tiers
+      - données réellement transmises
+      - configuration et traitement serveur
+      - rôle du fournisseur et base juridique retenue
+    legal_judgment_required:
+      - présence d’un renseignement personnel
+      - fonction d’identification, localisation ou profilage
+      - nécessité d’un consentement
+      - exception, finalité primaire ou caractère essentiel
+    expected_outcomes:
+      blocklist_request_observed:
+        - ANOMALIE_TECHNIQUE
+        - INDETERMINE_JURIDIQUE
+      no_blocklist_request_observed:
+        - FAIT_OBSERVE
+      source_unverified:
+        - INDETERMINE_SOURCE
+    action: remove_from_legal_pass_fail_keep_as_privacy_signal
+
+  - id: loi25-mecanisme-de-refus
+    current_rule_classification: secondary_guidance_misrepresented_as_statutory_binary_rule
+    official_articles:
+      - '14'
+    source_url: https://www.legisquebec.gouv.qc.ca/fr/document/lc/P-39.1/
+    source_verified_at: '2026-08-05'
+    exact_obligation: >-
+      Un consentement prévu par la loi doit notamment être libre. La CAI interprète ce critère
+      comme exigeant qu’il soit aussi facile de consentir que de ne pas consentir et que les choix
+      soient présentés équitablement; cette formulation appartient aux lignes directrices, pas au
+      libellé autonome de P-39.1.
+    observable_by_osiris:
+      - existence d’une interface de consentement
+      - présence et libellé d’un contrôle de refus
+      - nombre de clics, visibilité et parcours comparatif
+    internal_information_required:
+      - finalités couvertes
+      - conséquences réelles du refus
+      - persistance du choix
+      - comportement backend
+    legal_judgment_required:
+      - consentement juridiquement requis
+      - liberté réelle du choix
+      - influence indue ou dark pattern
+      - équité contextuelle des mécanismes
+    expected_outcomes:
+      applicable_interface_and_reliable_refusal_found:
+        - FAIT_OBSERVE
+      applicable_interface_and_refusal_absent_or_burdensome:
+        - ANOMALIE_TECHNIQUE
+        - INDETERMINE_JURIDIQUE
+      no_applicable_interface_established:
+        - INDETERMINE_APPLICABILITE
+      incomplete_scan:
+        - INDETERMINE_SCAN
+      source_unverified:
+        - INDETERMINE_SOURCE
+    action: demote_to_interface_control_never_blocking_from_dom_presence_alone
+
+  - id: loi25-respect-du-refus
+    current_rule_classification: useful_behavioral_test_but_not_direct_legal_verdict
+    official_articles:
+      - '8, al. 1, par. 4°'
+      - '12'
+      - '13'
+      - '14'
+      - '22'
+    source_url: https://www.legisquebec.gouv.qc.ca/fr/document/lc/P-39.1/
+    source_verified_at: '2026-08-05'
+    exact_obligation: >-
+      La personne doit être informée de son droit de retirer son consentement à l’utilisation
+      ou à la communication. Les conséquences juridiques d’un refus dépendent de la finalité,
+      de la base juridique et du traitement concerné. En prospection commerciale ou philanthropique,
+      l’article 22 exige expressément que l’utilisation visée cesse après retrait.
+    observable_by_osiris:
+      - requêtes réseau après clic sur un contrôle de refus fiable
+      - contrôle cliqué, horodatage et session fraîche
+    internal_information_required:
+      - finalité de chaque requête
+      - données transmises et traitements serveur
+      - persistance du choix
+      - classification essentiel ou non essentiel
+      - base juridique
+    legal_judgment_required:
+      - portée du refus
+      - consentement requis pour le traitement
+      - qualification comme utilisation ou communication visée
+    expected_outcomes:
+      suspicious_request_after_reliable_refusal:
+        - ANOMALIE_TECHNIQUE
+        - INDETERMINE_JURIDIQUE
+      no_suspicious_request_after_reliable_refusal:
+        - CONTROLE_TECHNIQUE_OBSERVE
+      refusal_action_not_reliable:
+        - INDETERMINE_SCAN
+      applicability_not_established:
+        - INDETERMINE_APPLICABILITE
+      source_unverified:
+        - INDETERMINE_SOURCE
+    action: keep_behavioral_test_remove_automatic_legal_failure_and_blocking_penalty
+
+  - id: loi25-designation-rpp
+    current_rule_classification: directly_grounded_public_obligation_with_bad_detector
+    official_articles:
+      - '3.1'
+    source_url: https://www.legisquebec.gouv.qc.ca/fr/document/lc/P-39.1/
+    source_verified_at: '2026-08-05'
+    exact_obligation: >-
+      La personne ayant la plus haute autorité exerce la fonction de RPRP sauf délégation écrite.
+      Le titre et les coordonnées du RPRP doivent être publiés sur le site Web, ou rendus accessibles
+      autrement si l’entreprise n’a pas de site. Le nom personnel n’est pas expressément requis.
+    observable_by_osiris:
+      - titre ou rôle correspondant au RPRP
+      - au moins une coordonnée utilisable
+      - URL et extrait de preuve
+    internal_information_required:
+      - identité de la plus haute autorité
+      - délégation écrite et portée
+      - exercice réel de la fonction
+    legal_judgment_required:
+      - suffisance du libellé du rôle
+      - caractère réellement joignable des coordonnées
+    expected_outcomes:
+      title_and_contact_found:
+        - FAIT_OBSERVE
+      missing_after_complete_documented_crawl:
+        - ECART_PUBLIC_APPARENT
+      incomplete_or_single_page_scan:
+        - INDETERMINE_SCAN
+      designation_or_delegation_effectiveness:
+        - INDETERMINE_INTERNE
+      source_unverified:
+        - INDETERMINE_SOURCE
+    implementation_defects:
+      - regex historique cherche privacy|rpp|confidentialite|legal au début du domaine après arobase
+      - une adresse normale rpp@entreprise.ca peut être manquée
+      - une adresse générique seule ne prouve pas la publication du titre
+    action: keep_rewrite_detector_and_replace_pass_fail_with_publication_statuses
+
+  - id: loi25-politique-confidentialite-publiee
+    current_rule_classification: directly_grounded_but_conditionally_applicable_and_underobserved
+    official_articles:
+      - '8.2'
+    source_url: https://www.legisquebec.gouv.qc.ca/fr/document/lc/P-39.1/
+    source_verified_at: '2026-08-05'
+    related_but_distinct_articles:
+      - '3.2'
+    exact_obligation: >-
+      Une entreprise qui recueille des renseignements personnels par un moyen technologique doit
+      publier et diffuser une politique de confidentialité en termes simples et clairs et diffuser
+      un avis pour toute modification. L’article 3.2 sur la gouvernance est une obligation publique distincte.
+    observable_by_osiris:
+      - collecte technologique possible
+      - lien vers une politique
+      - accessibilité et nature réelle de la page cible
+      - version ou avis de modification lorsqu’il existe
+    internal_information_required:
+      - collectes non visibles et flux serveur
+      - pratiques réelles
+      - historique des modifications et moyens de diffusion
+    legal_judgment_required:
+      - qualification des données comme renseignements personnels
+      - simplicité, clarté et adéquation de la politique
+      - concordance avec les pratiques
+      - nécessité d’un avis de modification
+    expected_outcomes:
+      personal_information_collection_established_and_policy_accessible:
+        - FAIT_OBSERVE
+        - INDETERMINE_JURIDIQUE
+      collection_established_policy_missing_after_complete_crawl:
+        - ECART_PUBLIC_APPARENT
+      collection_not_established:
+        - INDETERMINE_APPLICABILITE
+      link_only:
+        - FAIT_OBSERVE
+      source_unverified:
+        - INDETERMINE_SOURCE
+    implementation_defects:
+      - le détecteur historique valide tout texte de lien contenant le mot très large protection
+      - le lien n’est pas nécessairement ouvert ni validé
+      - l’applicabilité de l’article 8.2 n’est pas établie
+    action: keep_conditionally_validate_target_and_separate_from_article_3_2
+
+missing_public_rule:
+  id: loi25-gouvernance-publique
+  official_articles:
+    - '3.2'
+  source_url: https://www.legisquebec.gouv.qc.ca/fr/document/lc/P-39.1/
+  source_verified_at: '2026-08-05'
+  exact_obligation: >-
+    Publier des informations détaillées, simples et claires sur les politiques et pratiques de
+    gouvernance, notamment la conservation et la destruction, les rôles et responsabilités du
+    personnel et le traitement des plaintes.
+  observable_by_osiris:
+    - présence publique des trois thèmes obligatoires
+  not_provable_by_osiris:
+    - mise en oeuvre
+    - approbation par le RPRP
+    - proportionnalité et efficacité
+  expected_outcomes:
+    topics_found:
+      - FAIT_OBSERVE
+    topics_missing_after_complete_crawl:
+      - ECART_PUBLIC_APPARENT
+    incomplete_scan:
+      - INDETERMINE_SCAN
+    implementation_or_approval:
+      - INDETERMINE_INTERNE
+    legal_sufficiency:
+      - INDETERMINE_JURIDIQUE
+
+url_only_exclusions:
+  - control: EFVP de projet
+    articles: ['3.3']
+    expected: [INDETERMINE_INTERNE]
+  - control: Registre et gestion des incidents
+    articles: ['3.5', '3.6', '3.7', '3.8']
+    expected: [INDETERMINE_INTERNE, INDETERMINE_JURIDIQUE]
+  - control: Durée réelle de conservation, destruction et anonymisation
+    articles: ['3.2', '8', '23']
+    expected: [INDETERMINE_INTERNE, INDETERMINE_JURIDIQUE]
+  - control: Communication ou traitement hors Québec
+    articles: ['8', '17']
+    expected: [FAIT_OBSERVE, INDETERMINE_INTERNE, INDETERMINE_JURIDIQUE]
+
+engine_corrections:
+  - id: source_guard
+    requirement: Check citation verification before producing any legal pass or fail or score penalty.
+  - id: raw_observation_separation
+    requirement: Preserve raw technical facts separately from legal status; expose orthogonal technical_observation and legal_status fields.
+  - id: global_conformity
+    requirement: Keep global conforme null in URL-only mode.
+  - id: status_model
+    requirement: Replace pass/fail/non_applicable-only model with observed, anomaly, apparent gap and indeterminate states.
+  - id: crawl_coverage
+    requirement: Require documented crawl coverage before any apparent public gap.
+  - id: rpp_detector
+    requirement: Detect contextual title plus contact; do not rely on the historical malformed email-domain regex.
+  - id: refusal_detector
+    requirement: Remove generic non and span matching; use reliable consent UI context and comparative interaction.
+  - id: policy_detector
+    requirement: Open and validate the target page; do not accept a broad keyword alone.
+
+required_regression_tests:
+  - TODO source plus unfavorable fact returns INDETERMINE_SOURCE and no legal penalty.
+  - TODO source plus favorable fact returns INDETERMINE_SOURCE.
+  - Article 3.1 plus title and contact returns publication observed.
+  - Article 3.1 absent on one page returns INDETERMINE_SCAN.
+  - Article 3.1 absent after complete documented crawl returns ECART_PUBLIC_APPARENT.
+  - No consent banner returns INDETERMINE_APPLICABILITE rather than fail.
+  - Blocklist domain before interaction returns ANOMALIE_TECHNIQUE rather than non-compliant.
+  - No blocklist domain observed never returns compliant.
+  - rpp@entreprise.ca with contextual RPRP title is detected.
+  - Isolated word non outside consent UI is not treated as refusal.
+  - Link containing protection but targeting unrelated content does not validate a policy.
+  - Privacy link returning 404 does not count as accessible.

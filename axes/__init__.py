@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import importlib
 import logging
+import sys
 from collections.abc import Callable, Coroutine
 from dataclasses import dataclass
 from typing import Any, TypeVar
@@ -137,3 +138,20 @@ def discover_axes() -> None:
             importlib.import_module(module_name)
         except ImportError as e:
             logger.warning("Module %s non trouvé : %s", module_name, e)
+
+    # Un module peut déjà être dans sys.modules alors que son entrée de registre
+    # a été perdue ou remplacée. Réexécuter uniquement les modules canoniques
+    # absents restaure le registre sans recharger le chemin nominal complet.
+    module_by_key = dict(zip(("O", "S", "I", "R", "V", "L"), axis_modules, strict=True))
+    for key, module_name in module_by_key.items():
+        if key not in registry and module_name in sys.modules:
+            importlib.reload(sys.modules[module_name])
+
+    missing = [key for key in module_by_key if key not in registry]
+    if missing:
+        raise RuntimeError(f"Registre OSIRIS incomplet; axes absents : {', '.join(missing)}")
+    canonical_weights = [
+        axis.weight for key in module_by_key if (axis := registry.get(key)) is not None
+    ]
+    if any(weight <= 0 for weight in canonical_weights) or abs(sum(canonical_weights) - 1.0) > 1e-9:
+        raise RuntimeError("Registre OSIRIS incohérent; les poids OSIRVL doivent totaliser 1.0")
